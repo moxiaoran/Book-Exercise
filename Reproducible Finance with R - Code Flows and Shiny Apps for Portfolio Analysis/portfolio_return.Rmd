@@ -1,0 +1,45 @@
+---
+title: "Untitled"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(flexdashboard)
+library(tidyverse) 
+library(highcharter) 
+library(tidyquant) 
+library(timetk)
+```
+
+
+
+
+
+Column {data-width=750}
+-----------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+
+```
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+
+```
+
+### Chart C
+
+```{r}
+
+```
+

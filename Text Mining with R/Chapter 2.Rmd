@@ -1,0 +1,288 @@
+---
+title: "chapter 2"
+author: "Yifei Liu"
+date: "3/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(tidytext)
+library(janeaustenr)
+library(pdftools)
+library(stringr)
+library(tidyr)
+library(gutenbergr)
+library(pdftools)
+library(tm)
+library(tm.plugin.webmining)
+library(purrr)
+library(methods)
+library(Matrix)
+library(scales)
+library(stringr)
+library(reshape2)
+library(ggraph)
+library(widyr)
+library(wordcloud)
+library(widyr)
+library(igraph)
+library(subtools)
+library(topicmodels)
+library(mallet)
+theme_set(theme_minimal())
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+```
+
+One way to analyze the sentiment of a text is to consider the text as a combination of its inidividual words and teh sentiment content of the whole text as the sum of the sentiment content of the inidivuals words. 
+
+
+## 2.1 The Sentiments datasets
+
+```{r}
+sentiments
+```
+
+all these three lexicons are based on unigrams. i.e., signle words. Since we use these sentiment lexicons to value sentiment, we need to pay attention to how they put together and validated. 
+
+## 2.2 Sentiment Analysis with inner join
+
+```{r}
+tidy_books <- austen_books() %>%
+  group_by(book) %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("chapter [\\divxlc]", ignore_case = T)))) %>%
+  ungroup() %>%
+  unnest_tokens(word, text)
+
+nrcjoy <- get_sentiments("nrc") %>%
+  filter(sentiment == "joy")
+
+tidy_books %>%
+  filter(book == "Emma") %>%
+  inner_join(nrcjoy) %>%
+  count(word, sort = T)
+
+```
+
+see how sentiment changes throughout each novel. we can use index to counts up 80 lines
+
+```{r}
+janeaustensentiment <- tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(book, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+janeaustensentiment %>%
+  ggplot(aes(index, sentiment, fill = book)) +
+  geom_col(show.legend =  F) +
+  facet_wrap(~ book, ncol = 2, scales = "free_x")
+```
+
+## 2.3 Comparing the Three sentiment dictionaries
+
+With serveral options for sentiment lexicons, you might want to explore these couple options and decide whick one is more approporate for you purposes. 
+
+```{r}
+pride_prejudice <- tidy_books %>%
+  filter(str_detect(book, regex("pride", ignore_case = T)))
+
+pride_prejudice
+
+afinn <- pride_prejudice %>%
+  inner_join(get_sentiments("afinn")) %>%
+  group_by(index = linenumber %/% 80) %>%
+  summarize(sentiment = sum(score)) %>%
+  mutate(method = "AFINN")
+
+
+bing_and_nrc <- bind_rows(
+  pride_prejudice %>%
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  pride_prejudice %>%
+    inner_join(get_sentiments("nrc") %>%
+    filter(sentiment %in% c("positive", "negative"))) %>%
+    mutate(method = "NRC")
+) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+
+bind_rows(afinn,
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~ method, ncol = 1, scales = "free_y") +
+  labs(x = "")
+
+```
+
+The three different lexicons for calculating sentiment give results that are different in an absolute sense. 
+```{r}
+x <- get_sentiments("afinn") %>%
+  # sscore == 0, don't need to worry since we only have one word score == 0
+  mutate(sentiment = case_when(score <= 0 ~ "negative",
+                               T ~ "positive")) %>%
+  count(sentiment) %>%
+  mutate(name = "afinn")
+
+three_sentiment <- bind_rows(get_sentiments("nrc") %>% 
+     filter(sentiment %in% c("positive", 
+                             "negative")) %>% 
+  count(sentiment) %>%
+  mutate(name ="nrc"),
+  get_sentiments("bing") %>% 
+  count(sentiment) %>%
+  mutate(name = "bing"),
+  get_sentiments("afinn") %>%
+  # sscore == 0, don't need to worry since we only have one word score == 0
+  mutate(sentiment = case_when(score <= 0 ~ "negative",
+                               T ~ "positive")) %>%
+  count(sentiment) %>%
+  mutate(name = "afinn")) 
+
+three_sentiment %>%
+  ggplot(aes(sentiment, n, fill = sentiment)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~ name) +
+  labs(x = "", y = "")
+
+three_sentiment %>%
+  spread(sentiment, n) %>%
+  mutate(ratio = negative / positive)
+
+```
+
+All these lexicons have more negative then positive, but the ratio is different. The ratio use negative /positive range from 2.3 - 1.4. This bias will contribute to the effect we see in the plot above, as well as any systematic difference in the word mathces. (just be mindful when you do any data analysis, is there any similary systematic basis exist) e.g. if the negative words in the NRC lexicon do not match the words that Jane Austen uses very well. what ever the source of these differences, we seee similary relative trajectories across the narrative arc. _This is all important context to keep in mind when choose a sentiment elxicon for analysis._
+
+
+
+
+## 2.4 Most common positive and negative words
+
+```{r}
+bing_word_counts <- tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = T) %>%
+  ungroup()
+
+bing_word_counts
+
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = fct_reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~ sentiment, scale = "free_y") +
+  labs(y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()
+
+```
+We can see miss been consider a negative word, but in the context, "miss" is used for young, unmarried women in Jane's work. So we need to custome stop_word
+
+```{r}
+custom_stop_words <- bind_rows(data_frame(word = c("miss"),
+                                          lexicon = c("custom")),
+                               stop_words)
+
+custom_stop_words %>%
+  count(lexicon)
+```
+
+## 2.5 Wordcloud
+
+Not a good way to visualize analysis anything, but a great way to do marketing I guess. 
+
+```{r, warning=F}
+
+tidy_books %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100))
+
+tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = T) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(color = c("gray20", "gray80"))
+
+```
+
+
+## 2.6 Looking at units beyond just words
+
+```{r}
+PandP_sentences <- data_frame(text = prideprejudice) %>%
+  unnest_tokens(sentence, text, token = "sentences")
+
+
+```
+
+
+```{r}
+austen_chapters <- austen_books() %>%
+  group_by(book) %>%
+  unnest_tokens(chapter, text, token = "regex", pattern = "Chapter|CHAPTER [\\diVXLC]") %>%
+  ungroup()
+
+austen_chapters %>%
+  group_by(book) %>%
+  summarize(chapters = n())
+```
+
+After group austen book, we can ask questions such as what are the most negative chapter in each of Jane's novel. 
+
+```{r}
+bingnegative <- get_sentiments("bing") %>%
+  filter(sentiment == "negative")
+
+wordcounts <- tidy_books %>%
+  group_by(book, chapter) %>%
+  summarize(words = n())
+
+
+tidy_books %>%
+  group_by(book, chapter) %>%
+  add_count(chapter)
+
+tidy_books %>%
+  semi_join(bingnegative) %>%
+  group_by(book, chapter) %>%
+  summarize(negativewords = n()) %>%
+  left_join(wordcounts, by = c("book", "chapter")) %>%
+  mutate(ratio = negativewords / words) %>%
+  filter(chapter != 0) %>%
+  top_n(1, wt = ratio) %>%
+  ungroup()
+```
+
+These are the chapters with the mosit sad wods in each books. All these saddes chapter with the highest percentage of word that are sad. 
+
+> INTERESTING: we can use the similary method to analzy company 10K/Q or employee tweets, does these sentiment also in anyway show sentiment chage, can we use these as a predictor of company future. such as recent sexutual assult case in DataCamp, all the instructor express there angry at the company but company fail to take responsibility. 
+
+## 2.7 Summary. 
+
+Sentiment analysis provides a way to understand the **attitues** and **opitons** expressed in the text. e.g. Trump's tweets. 
+
+
+
+
+
+
+
+
+
+
+
+

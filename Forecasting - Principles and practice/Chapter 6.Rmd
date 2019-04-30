@@ -1,0 +1,555 @@
+---
+title: "Chpater 6"
+author: "Yifei Liu"
+date: "2/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(forecast)
+library(seasonal)
+library(fpp2)
+library(broom)
+library(tidyverse)
+library(sweep)
+library(tseries)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+library(scales)
+library(GGally)
+library(e1071)
+library(fpp2)
+library(gridExtra)
+theme_set(theme_minimal())
+```
+
+## 6.1 Time Series Components
+
+
+Additive decomposition model
+
+$y_t = S_t + T_t + R_t$
+
+Multiplicative decompisition model
+
+$y_t = S_t \times T_t \times R_t $
+
+$y_t$ is the data, $S_t$ is the seasonal component, $T_t$ is the trend-cycle component, the $R_t$ is the remainder component. 
+
+ATTENTION: The additive decomposition is the most appropriate if the magnitude of the seaosnal fluctuations or the variation around the trend-cycle does not vary of the times series. 
+
+### Seasonally adjusted data
+
+ATTENTION: if the variation due to seasonality is not of primary interest, the seasonally adjusted series can be useful. 
+
+## 6.2 Moving Averages
+
+
+### Moving average smoothing
+
+$\hat{T_t} = \frac{1}{m}\sum_{j = -k}^{k}y_{t+j}$
+
+where $m = 2k+1$ 
+
+```{r}
+autoplot(elecsales) +
+  labs(x = "Year", y = "Gwh",
+       title = "Annual Electricity Sales: South Australia")
+
+x <- data.frame(time = index(elecsales), 
+                data = as.numeric(elecsales))
+
+x <- x %>% 
+  mutate(data_5ma = rollmean(data, k = 5, fill = NA))
+
+knitr::kable(x, format = "html")
+
+
+```
+There are no values for either the first two ears of the last two year, because we do not have two observations on either side. 
+
+```{r}
+
+autoplot(elecsales, series = "Data") +
+  autolayer(ma(elecsales, 5), series = "5-MA") +
+  labs(x = "year", y = "GWH",
+       title = "Annual electricity series: South Australia") 
+```
+
+
+### Moving avetages of moving averages
+
+```{r}
+beer2 <- window(ausbeer, start = 1992)
+
+beer2_data <- data.frame(date = index(beer2),
+                         observation = as.numeric(beer2))
+
+beer2_data %>%
+  mutate(ma4 = ma(observation, order = 4, centre = F),
+         ma2_4 = ma(observation, order = 4, centre = T)) %>%
+  knitr::kable()
+
+```
+
+
+### Example: Electrical equipment manufacturing
+
+
+```{r}
+autoplot(elecequip, series = "Data", color = "grey50", alpha = 0.5) +
+  autolayer(ma(elecequip, centre = T, order = 12), series = "12-MA", color = "red") +
+  labs(y = "New orders index",
+       title = "Electrical equipment manufacturing (Euro area)")
+```
+
+
+## 6.3 Classical decomposition
+
+Additive decomposition and multiplcative decomposition
+
+```{r}
+elecequip %>% decompose(type = "multiplicative") %>%
+  autoplot() +
+  labs(title = "Classical multiplicative decomposiition of electrical equipment index")
+
+
+elecequip %>% decompose(type = "additive") %>%
+  autoplot() +
+  labs(title = "Classical additive decomposiition of electrical equipment index")
+```
+
+
+### Comments on classical decompisition
+
+ATTENTION: 
+
+- the estimate of the trend-cycle is unavailable for the first and last few observations, and no estimate of the remainder component for the same time periods.
+
+- The trend-cycle estiamte tends to over-smooth rapid rises and falls in the data
+
+- Classical decomposition methods assume that the seasonal component repeat from year to year. in come place it may not hold true, like electricity demand pattern have changed over time as AC have become more widespread. 
+
+- Occasionally, the values of the time series in a small number of periods may be particularly unusual. The classical method is not robust ot these kinds of unusual values. 
+
+## 6.4 X11 decomposition
+
+
+```{r}
+elecequip %>%
+  seas(x11 = "") -> fit
+
+autoplot(fit) +
+  labs("X11 decomposition of electrical equipment index")
+
+```
+
+
+ATTENTION: compare x11 and other classical time series decomposition method, we can see the X11 trend-cycle has captured the sudden fall in the data in searly 2009. 
+
+
+```{r}
+autoplot(elecequip, series = "Data") +
+  autolayer(trendcycle(fit), series = "Trend") +
+  autolayer(seasadj(fit), series = "Seasonally Adjusted") +
+  labs(y = "new order index",
+       title = "Electrical equipment manufacturing (Euro Area)") +
+  scale_color_manual(values = c("grey", "blue", "red"),
+                     breaks = c("Data", "Trend", "Seasonally Adjusted"))
+
+```
+
+
+
+```{r}
+
+fit %>% seasonal() %>%
+  ggsubseriesplot() +
+  labs(y = "Seasonal", x = "",
+       title = "Seasonal sub-series plot of New order Index")
+
+```
+## 6.5 SEATS decomposition
+
+*SEATS* stand for "Seasonal Extraction in ARIMA Time Series." This procedure was originally developed at the Bank of Spain, and is now widely used by government agencies around the world. The procedure works only with *quarterly and monthly* data. so other seasonality data, such as daily, hourly data, or weekly data, require an alternative approach. 
+
+```{r}
+elecequip %>% 
+  seas() -> fit_seats
+
+fit_seats %>%
+  autoplot() +
+  labs(title = "SEATS decomposition of electrical equipment index")
+
+```
+
+
+### 6.6 STL decomposition
+
+*SYL* acronymfor "Seasonal and Trend decomposition using Loess"
+
+ATTENTION: Advantages over classical, X11, SEATS
+
+- can handle any type of seasinality, etc (Check book)
+
+
+```{r}
+elecequip %>%
+  stl(t.window = 13, s.window = "periodic", robust = T) %>%
+  autoplot() +
+  labs(title = "STL of new order index")
+
+```
+
+## 6.7 Measuring strength of trend and seasonality
+
+strength of trend as
+
+$F_T = max(0, 1 - \frac{Var(R_t)}{Var(T_t + R_t)}$
+
+strendth of seasonality as
+
+$F_S = max(0, 1 - \frac{Var(R_t)}{Var(S_t + R_t)}$
+
+
+These method ive a measurement of strength of trend and seasonality, if series with seasonal or trend strength $F_S$ $F_T$ is close to 1, we can say the data exhibut strong seasonality/trend. 
+
+ATTENTION: These method could be useful if you want to analyze a large collection of time series, and want to find
+
+
+## 6.8 Forecasting with decomposition
+
+### Example: Electrical equipment manufacturing
+
+
+```{r}
+fit <- stl(elecequip, t.window = 13, s.window = "periodic", robust = T)
+
+fit %>% 
+  seasadj() %>%
+  naive() %>%
+  autoplot() +
+  labs(y = "New orders index", x = "",
+       title = "Naive forecasts of seasonally adjusted data")
+
+```
+
+ATTENTION: This is the naive forecasts of the seasonally adjusted electrical equipment orders data. We can "reseasonalised" by adding the seasonal naive forecasts of the seasonal component.
+
+```{r}
+fit %>% forecast(method = "naive") %>%
+  autoplot() +
+  labs(y = "New orders index", title = "Forecasts from STL + Random Walk",
+       x = "")
+
+```
+
+
+## 6.9 Exercises
+
+1. Show that a $3 \times 5$ MA is equivalent to a 7-term weighted moving average with weights of 0.067, 0.133, 0.200, 0.200, 0.200, 0.133, and 0.067.
+
+use beer2 as example
+
+```{r}
+beer2_data %>%
+  mutate(ma_5ma = ma(observation, order = 5, centre = F),
+         ma_3_5ma = ma(ma_5ma, order = 3, centre = T))  %>%
+  head(10) %>%
+  knitr::kable()
+
+```
+
+2. The plastics data set consists of the monthly sales (in thousands) of product A for a plastics manufacturer for five years.
+
+a. Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?
+
+```{r}
+autoplot(plastics)
+
+```
+
+
+we can see the seasonal fuctuations and upward trend. 
+
+b. Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.
+
+```{r}
+plastics %>% decompose(type = "multiplicative") ->
+  fit_multi
+
+fit_multi %>%
+  autoplot()
+
+
+```
+
+c. Do the results suppor the graphical interpretation from part a?
+
+Yes, it does
+
+d. Compute and plot the seasonally adjusted data
+
+```{r}
+
+seasadj(fit_multi)
+
+autoplot(plastics, series = "Data", color = "grey50") +
+  autolayer(seasadj(fit_multi), series = "Seasonally Adjusted", color = "red")
+
+
+```
+
+e. Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
+
+```{r}
+plastics_outlier <- plastics
+plastics_outlier[40] <- plastics_outlier[40] + 500
+
+plastics_outlier %>% decompose(type = "multiplicative") ->
+  fit_out
+
+autoplot(fit_out)
+
+a <- autoplot(plastics_outlier, series = "Data", color = "grey50") +
+  autolayer(seasadj(fit_out), series = "Seasonally Adjusted", color = "red")
+
+a
+
+b <- autoplot(plastics, series = "Data", color = "grey50") +
+  autolayer(seasadj(fit_multi), series = "Seasonally Adjusted", color = "red")
+
+grid.arrange(a,b, ncol = 1)
+```
+
+
+outlier have little effect on general trend, but have effect on seasonaly adjusted data, just like original data. 
+
+f. Does it make any difference if the outlier is near the end rather than in the middle of the time series?
+
+if the outlier is near the end, same amount of increase have less effect than in the middle of the time series. Because the trend is general upward, to have same amount of effect, the outlier shouold be larger in the end than middle. 
+
+
+3. Recall your retail time series data (from Exercise 3 in Section 2.10). Decompose the series using X11. Does it reveal any outliers, or unusual features that you had not noticed previously?
+
+```{r}
+retaildata <- readxl::read_excel("/Users/yifeiliu/Documents/R/data/book_exercise/forecasting/retail.xlsx", skip = 1)
+
+myts <- ts(retaildata[,"A3349873A"],
+  frequency=12, start=c(1982,4))
+
+autoplot(myts)
+
+```
+
+```{r}
+myts %>% seas(x11 = "") -> fit
+
+autoplot(fit)
+
+classical_fit <- myts %>% decompose(type = "multiplicative")
+
+autoplot(classical_fit)
+```
+
+put the classical decomposition with X11 side by side, we can observer X11 decomposite result should large outlier around 2010-2014. And X11 decomposite result also show seasonal effect start decrease around the end of dataset. 
+
+
+4. Figures 6.16 and 6.17 show the result of decomposing the number of persons in the civilian labour force in Australia each month from February 1978 to August 1995.
+
+
+```{r}
+stl_labour <- stl(labour, s.window = 13, robust = TRUE)
+
+autoplot(stl_labour) +
+  labs(title = "STL decomposition of civilian labour force")
+
+ggsubseriesplot(seasonal(stl_labour)) +
+  labs(y = "seasonal", title = "")
+
+```
+
+a. Write about 3–5 sentences describing the results of the decomposition. Pay particular attention to the scales of the graphs in making your interpretation.
+
+```{r}
+autoplot(labour, series = "Data", color = "grey50") +
+  autolayer(trendcycle(stl_labour), series = "Trend", color = "red") +
+  autolayer(seasadj(stl_labour), series = "Seasonally Adjusted", color = "blue") +
+  labs(x = "", y = "", title = "Number of persons in the civilian labour force in Australia each month")
+
+```
+overall, the numer of people in the civilian labour force increase over time. There were some recession during 1991-1992, seasonally adjusted data were able to capture this event. 
+From subseriesplot, we can observe the seasonal fluctuation is relative small.
+
+b. Is the recession of 1991/1992 visible in the estimated components?
+
+It's visible in seasonal adjusted data. 
+
+
+5. This exercise uses the cangas data (monthly Canadian gas production in billions of cubic metres, January 1960 – February 2005).
+
+
+a. Plot the data using autoplot(), ggsubseriesplot() and ggseasonplot() to look at the effect of the changing seasonality over time. What do you think is causing it to change so much?
+
+```{r}
+autoplot(cangas)
+
+ggsubseriesplot(cangas)
+
+ggseasonplot(cangas, polar = T)
+
+```
+
+In the early stage, the production of gas higher in winer than summer, due to cold weather. But the production of gas goes up during summer as time goes on, probably due to increase use of AC in the summer. 
+
+
+b. Do an STL decomposition of the data. You will need to choose s.window to allow for the changing shape of the seasonal component.
+
+```{r}
+fit_stl <- stl(cangas, s.window = 13, robust = T)
+
+autoplot(fit_stl) +
+  labs(title = "Monthly Canadian gas production",
+       subtitle = "STL method", x= "")
+
+
+```
+we can observe the seasonal component increase at the begining of 70 and decrease around 90. And from trend component we can observe a general upward trend, but the trend is also flat during 70-87 period. 
+
+```{r}
+autoplot(cangas, series = "Data", color = "grey50") +
+  autolayer(trendcycle(fit_stl), series = "Trend", color = "red") +
+  autolayer(seasadj(fit_stl), series = "Seasonally Adjusted", color = "blue") +
+  labs(x = "", y = "", title = "Monthly Canadian gas production, STL decomposition")
+
+```
+
+
+c. ompare the results with those obtained using SEATS and X11. How are they different?
+
+```{r}
+fit_seats <- cangas %>% seas()
+fit_x11 <- cangas %>% seas(x11 = "")
+
+autoplot(fit_x11)
+autoplot(fit_seats)
+
+
+
+```
+
+
+seas method use multiplicative decompisition method, so the mean of remainder for both SEATS and X11 are one. and mean of remainder for STL is zero. The trend is same among all three method, both increase and remain the same then increase again. 
+
+For seasonal component, we can observe that the seas method have a high seasonal compoent then decrease and increase. For STL method the seasoanl compoent is increase in the middle of data and decrease again. 
+
+
+6. We will use the bricksq data (Australian quarterly clay brick production. 1956–1994) for this exercise.
+
+a. Use an STL decomposition to calculate the trend-cycle and seasonal indices. (Experiment with having fixed or changing seasonality.)
+
+```{r}
+# fixed seasonality 
+fit_stl_fix <- bricksq %>% stl(s.window = "period", robust = T)
+fit_stl_float <- bricksq %>% stl(s.window = 5, robust = T)
+
+a <- autoplot(fit_stl_fix) + labs(title = "fixed", x = "")
+b <- autoplot(fit_stl_float) + labs(title = "floated", x= "")
+
+grid.arrange(a,b, ncol = 2)
+
+```
+
+seasonal component is constant in fixed STL method and change over time in float method. 
+
+b. Compute and plot the seasonally adjusted data.
+
+```{r}
+
+autoplot(bricksq, series = "Data", color = "grey50") +
+  autolayer(seasadj(fit_stl_fix), series = "Seasonally Adjusted", color = "blue") +
+  autolayer(seasadj(fit_stl_float), series = "Seasonally Adjusted", color = "red") +
+  labs(x = "", y = "")
+
+
+```
+
+By plotting the seasonally adjusted data on the same chart, we can see the floating method is more smooth than the fixed method. 
+
+c. Use a naïve method to produce forecasts of the seasonally adjusted data.
+
+```{r}
+for_naive <- naive(bricksq)
+
+autoplot(for_naive)
+
+fit_stl_fix %>% forecast(method = "naive") -> for_fix
+
+
+fit_stl_float %>% forecast(method = "naive") -> for_float
+
+autoplot(bricksq) +
+  autolayer(for_fix, series = "Fixed") +
+  autolayer(for_float, series = "Floated")
+
+
+```
+
+The range of prediction interval from two method are almost identical. 
+
+d. Use stlf() to reseasonalise the results, giving forecasts for the original data.
+
+```{r}
+bricksq %>% stlf() -> for_stlf
+
+
+autoplot(for_stlf) + labs(x = "", y = "", title = "stlf")
+
+```
+```{r}
+checkresiduals(for_stlf)
+
+x <- Box.test(for_stlf$residuals, lag = 10, fitdf = 0, type = "Lj")
+
+
+```
+
+The residuals p-value is `r x$p.value` which is way smaller than the 0.05 which mean the error term is correlated. 
+
+
+
+f. Repeat with a robust STL decomposition. Does it make much difference?
+
+```{r}
+stl_robust <- stlf(bricksq, robust = TRUE)
+
+autoplot(stl_robust)
+
+checkresiduals(stl_robust)
+
+x <- Box.test(stl_robust, lag = 10, fitdf = 0, type = "Lj")
+
+```
+
+the p-value is `r x$p.value` is less than 0.05 which mean the residuals correlated. So stl method does not a difference. 
+
+
+g. Compare forecasts from stlf() with those from snaive(), using a test set comprising the last 2 years of data. Which is better?
+
+
+
+
+
+
+
+
+
+
+
+
+
+

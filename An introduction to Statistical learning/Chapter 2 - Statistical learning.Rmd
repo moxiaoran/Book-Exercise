@@ -1,0 +1,82 @@
+---
+title: "Chapter 2"
+author: "Yifei Liu"
+date: "12/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ISLR)
+library(MASS)
+library(GGally)
+library(tidyverse)
+library(broom)
+library(ggplot2)
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+
+
+
+```
+
+```{r}
+x <- seq(-pi, pi, length = 50)
+y = x
+f = outer(x, y, function(x, y) cos(y) / (1 + x^2))
+
+contour(x, y, f)
+contour(x, y, f, nlevels = 45, add = T)
+fa = (f - t(f)) / 2
+contour(x, y, fa, nlevels = 15)
+
+```
+
+
+```{r}
+A <- matrix(1:16, 4, 4)
+
+A[2,3]
+A[c(1, 3), c(2, 4)]
+```
+
+```{r}
+data(Auto)
+pairs(~ mpg + displacement + horsepower + weight + acceleration, Auto)
+ggpairs(Auto, columns = c(1, 3, 4, 5, 6))
+
+```
+
+
+2.3.4 Load data
+
+```{r}
+Auto <- read.table("http://www-bcf.usc.edu/~gareth/ISL/Auto.data", header = T)
+
+
+```
+
+2.4 Exercises
+
+
+```{r}
+College <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/College.csv")
+summary(College)
+
+Boston
+
+```
+
+
+
+
+
+
+
+
+
+

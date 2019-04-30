@@ -1,0 +1,1566 @@
+---
+title: "Chapter 8"
+author: "Yifei Liu"
+date: "3/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(forecast)
+library(seasonal)
+library(urca)
+library(readxl)
+library(rdatamarket)
+library(fma)
+library(astsa)
+library(tsibble)
+library(fpp2)
+library(tsibbledata) # devtools::install_github("tidyverts/tsibbledata")
+library(broom)
+library(tidyquant)
+library(tidyverse)
+library(sweep)
+library(lubridate)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+library(tseries)
+library(scales)
+library(GGally)
+library(fpp2)
+library(e1071)
+library(fpp2)
+library(timetk)
+library(gridExtra)
+library(ggthemes)
+theme_set(theme_minimal())
+```
+
+
+## 8.1 Stationarity and differencing
+
+
+### Differencing
+
+
+```{r}
+Box.test(diff(goog200), type = "Ljung-Box")
+autoplot(diff(goog200))
+
+Box.test(diff(goog200), type = "Lj")
+```
+
+
+### Seasonal differencing
+
+```{r}
+cbind("Sales ($million)" = a10,
+      "Monthly log sales" = log(a10),
+      "Annual change in log sales" = diff(log(a10), 12)) %>%
+  autoplot(facet = T) +
+  labs(x = "", y = "", title = "Antidiabetic drug sales")
+
+Box.test(diff(log(a10), 12), type = "Ljung")
+
+```
+
+Sometimes it is necessary to take both a seasonal difference and a first difference to obtain stationary data. 
+
+seasonaly difference: $y'_t = y_t - y_{t-m}$ m = the numer of seasons. 
+
+twice-differenced series: $y''_t = y'_t-y'_{t-1} = y_t - y_{t-1} - y_{t-m} + y_{t-m-1}$
+
+ATTENTION: When both seasonal and first differences are applied, it makes no difference which is done first—the result will be the same. However, if the data have a strong seasonal pattern, we recommend that seasonal differencing be done first, because the resulting series will sometimes be stationary and there will be no need for a further first difference. If first differencing is done first, there will still be seasonality present.
+
+
+```{r}
+cbind("Billion KWh" = usmelec,
+      "Logs" = log(usmelec),
+      "Seasonally\n differenced logs" = diff(log(usmelec), 12),
+      "Doubly\n differenced logs" = diff(diff(log(usmelec), 12), 1)) %>%
+  autoplot(facets = T) +
+  labs(x = "", y = "",
+       title = "Monthly US net electricity generation")
+
+Box.test(diff(diff(log(usmelec), 12), 1), type = "Lj")
+```
+
+### Unit root tests
+
+```{r}
+goog %>% ur.kpss() %>% summary()
+goog %>% ur.df() %>% summary()
+```
+
+The ur.kpss test statistic is much bigger than 1% critical value, indicating that the null hypothesis is rejected. Thus the data is non-stationary. ur.df test statistic yield same result. 
+
+```{r}
+goog %>% diff() %>% ur.kpss() %>% summary()
+goog %>% diff() %>% ur.df() %>% summary()
+
+```
+Both method test statistic yield result smaller than critical t value, so we can conclude that the differenced data are stationary. 
+
+
+```{r}
+ndiffs(goog)
+goog %>% diff() %>% ur.kpss() %>% summary()
+```
+One difference is required to make the goog data stationary. 
+
+
+```{r}
+usmelec %>% log() %>% nsdiffs()
+usmelec %>% log() %>% diff(lag=12) %>% ndiffs()
+```
+Because nsdiffs returns 1 (indicating one seasonal difference is required), we apply the ndiffs funtion to the seasonal differenced data. These functions suggest we should do both a seasonal difference and a first difference. 
+
+
+## 8.2 Backshift notation
+
+## 8.3 Autoregressive models
+
+## 8.5 Non-seasonal ARIMA models
+
+### US consumption expenditure
+
+```{r}
+autoplot(uschange[, "Consumption"]) +
+  labs(x = "", y = "Quarterly percentage chnage")
+
+```
+
+```{r}
+fit <- auto.arima(uschange[, "Consumption"], seasonal = F)
+
+fit
+```
+```{r}
+fit %>%forecast(h = 10) %>% autoplot(include = 80)
+
+```
+
+
+
+```{r}
+# different way to show acf and pacf plot
+
+acf2(uschange[,"Consumption"])
+
+p1 <- ggAcf(uschange[, "Consumption"], main = "")
+p2 <- ggPacf(uschange[, "Consumption"], main = "")
+
+grid.arrange(p1, p2, ncol = 1)
+
+ggtsdisplay(uschange[, "Consumption"])
+
+```
+
+
+```{r}
+(fit2 <- Arima(uschange[, "Consumption"], order = c(3,0,0)))
+
+
+(fit3 <- auto.arima(uschange[,"Consumption"], seasonal=FALSE,
+  stepwise=FALSE, approximation=FALSE))
+
+```
+
+
+## 8.7 ARIMA modelling in R
+
+how _auto.arima()_ function in R work: it combines unit root tests, minimsation of the AICc and MLE to obtain an ARIMA model. 
+
+### Example: Seasonally adjusted electrical equipment orders
+
+```{r}
+eeadj <- elecequip %>% 
+  stl(s.window = 'periodic') %>%
+  seasadj() 
+eeadj %>%
+  autoplot()
+
+eeadj %>%
+  diff() %>%
+  ggtsdisplay()
+  
+  
+```
+
+
+```{r}
+(fit <- Arima(eeadj, order = c(3, 1,1)))
+(fit1 <- auto.arima(eeadj, stepwise = F, seasonal = F, approximation = F))
+
+# check residuals
+checkresiduals(fit)
+
+# plot the forecast from chosen model
+autoplot(forecast(fit))
+
+```
+
+### plotting the characteristic roots
+
+```{r}
+autoplot(fit, main = "")
+```
+
+
+## 8.9 Seasonal ARIMA models
+
+### Example: European quarterly retail trade
+
+```{r}
+autoplot(euretail) +
+  labs(x = "", y = "Retail Index")
+
+# test for stationary
+ur.df(euretail, type = "drift", lag = 10, selectlags = "AIC") %>% summary()
+
+```
+since this data is clearly non-stationary, so we will first take a seasonal difference. 
+
+```{r}
+euretail %>% diff(lag = 4) %>% ggtsdisplay()
+
+euretail %>% diff(lag = 4) %>% diff() %>% ggtsdisplay()
+
+```
+
+```{r}
+euretail %>%
+  Arima(order = c(0, 1, 1), seasonal = c(0,1,1)) %>%
+  residuals() %>%
+  ggtsdisplay()
+
+fit3 <- Arima(euretail, order = c(0,1,3), seasonal = c(0,1,1))
+checkresiduals(fit3)
+
+auto.arima(euretail)
+
+```
+
+### Example: Corticosteroid drug sales in Australia
+
+```{r}
+h02_log <- BoxCox(h02, lambda = "auto")
+
+cbind("h02_log" = h02_log,
+      "h02" = h02) %>%
+  autoplot(facet = T) +
+  labs(x = "",
+       y = "")
+
+h02_log %>%
+  diff(lag = 12) %>%
+  ggtsdisplay(main = "Seasonally differenced H02 scripts")
+
+```
+
+```{r}
+(fit <- Arima(h02, order = c(3,0,1), seasonal = c(0,1,2), lambda = 0))
+checkresiduals(fit, lag = 36)
+
+
+```
+
+```{r}
+h02 %>%
+  Arima(order = c(3,0,1), seasonal = c(0, 1, 2), lambda = 0) %>%
+  forecast() %>%
+  autoplot() +
+  labs("H02 sales (million scripts)",
+       x = "")
+
+
+```
+
+## 8.10 ARIMA VS ETS
+
+### Example: Comparing auto.arima and ets on non-seasonal data
+
+```{r}
+fets <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+
+farima <- function(x, h) {
+  forecast(auto.arima(x), h = h)
+}
+
+air <- window(ausair, start=1990)
+
+e1 <- tsCV(air, fets, h = 1)
+e2 <- tsCV(air, farima, h = 1)
+
+mean(e1^2, na.rm = T)
+mean(e2^2, na.rm = T)
+
+p1 <- air %>% ets() %>% forecast() %>% autoplot()
+p2 <- air %>% auto.arima() %>% forecast() %>% autoplot()
+
+grid.arrange(p1, p2, ncol = 1)
+
+```
+
+### Example: Comparing auto.arima and ets on seasonal data
+
+```{r}
+cement <- window(qcement, start = 1988)
+train <- window(cement, end = c(2007, 4))
+
+(fit_arima <- auto.arima(train))
+checkresiduals(fit_arima)
+
+(fit_ets <- ets(train))
+checkresiduals(fit_ets)
+
+a1 <- fit_arima %>% forecast(h = 4*(2013-2007) + 1) %>%
+  accuracy(qcement)
+
+a1[, c("RMSE", "MAE", "MAPE", "MASE")]
+
+a2 <- fit_ets %>% forecast(h = 4*(2013-2007) + 1) %>%
+  accuracy(qcement)
+
+a2[, c("RMSE", "MAE", "MAPE", "MASE")]
+
+```
+
+arima mase fit the training data slightly better than ets model, but that the ets model provides more accuracy forecasts on the test set. **A good fit to training data is never an indicator that the model will forecast will**
+
+```{r}
+cement %>% ets() %>% forecast(h = 12) %>%
+  autoplot()
+
+```
+
+## 8.11 Exercises
+
+1. 
+a. Explain the differences among these figures. Do they all indicate that the data are white noise?
+
+all these data are white noise
+
+b. Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?
+
+the threhold for each one is different because the length for each dataset is different. The critical value is $\sqrt2 / n$, n is the number of observation. Because the number are random generate, they should be different
+
+2. A classic example of a non-stationary series is the daily closing IBM stock price series (data set ibmclose). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be differenced.
+
+
+```{r}
+autoplot(ibmclose)
+```
+
+In the question, we follow the 8.7 example step by step.
+1. autoplot the time series data, we can observe the times series data show sudden changes. No need for any change.
+2. No evidence the variance change over time, so we do not need Box-Cox transformation.
+3. Data is non stationary, we can take the first difference. and plot it. 
+
+```{r}
+ibmclose %>% diff() %>% ggtsdisplay()
+
+# not sure whether after diff the data is stationary or not, use ur.df to test it. 
+ur.df(diff(ibmclose)) %>% summary()
+
+```
+
+4. The PACF and ACF in this case, does not show particular order. In this case I think I should use auto.arima model to gauge number. 
+
+```{r}
+auto.arima(ibmclose, stepwise = F, approximation = F)
+
+(fit <- Arima(ibmclose, order = c(1,1,0), lambda = NULL))
+
+checkresiduals(fit)
+
+```
+
+3. For the following series, find an appropriate Box-Cox transformation and order of differencing in order to obtain stationary data
+
+```{r}
+autoplot(usnetelec)
+BoxCox.lambda(usnetelec)
+
+Box.test(diff(usnetelec), type = "Lj")
+kpss.test(diff(usnetelec))
+
+```
+
+first difference able to obtain stationary data.
+
+```{r}
+BoxCox.lambda(usgdp)
+
+usgdp %>% BoxCox(lambda = "auto") %>%
+  diff() %>% ggtsdisplay()
+
+ndiffs(BoxCox(usgdp, lambda = "auto"))
+
+# so in this case we need to diff data once, after box cox transformation
+
+usgdp_diff <- diff(BoxCox(usgdp, lambda = "auto"))
+
+Box.test(usgdp_diff, lag = 20, type = "Lj")
+kpss.test(usgdp_diff, null = "Trend")
+
+# but it still cannot pass box.test. 
+
+ggtsdisplay(usgdp_diff, lag.max = 25)
+
+(fit <- Arima(usgdp, order = c(0, 2,3), seasonal = c(2,0,0)))
+checkresiduals(fit)
+```
+
+I couldn't find the order of differencing in order to ontain stationary data. 
+
+```{r}
+autoplot(mcopper)
+
+BoxCox(mcopper, lambda = "auto") %>%
+  ndiffs()
+
+# couldn't find the right order to different the dataset, so I have to use auto.arima model
+
+mcopper %>%
+  Arima(order = c(5,0,0)) %>%
+  residuals() %>% ggtsdisplay()
+
+
+
+```
+Still couldn't find the right order to different dataset. 
+
+```{r}
+autoplot(enplanements)
+
+# still couldn't find right order
+
+(fit <- Arima(enplanements, order = c(1,1,0), seasonal = c(1,0, 0), lambda = "auto"))
+
+checkresiduals(fit)
+
+# still not appropriate
+
+
+
+```
+
+```{r}
+autoplot(visitors)
+
+# need box cox transform
+vis_box <- BoxCox(visitors, lambda = "auto")
+# check how many differencing needed
+ndiffs(vis_box)
+
+vis_box %>% stl(s.window = 'periodic') %>% seasadj()
+
+vis_box %>% diff(lag = 12) %>% diff() %>%
+  ggtsdisplay()
+
+vis_box %>%
+  Arima(order = c(0, 1,4), seasonal = c(0, 1,1)) %>%
+  residuals() %>% checkresiduals()
+
+fit <- Arima(visitors, order = c(0, 1, 3), seasonal = c(0,1,1), lambda = "auto")
+
+fit %>% forecast(h = 12) %>% autoplot()
+```
+
+4. For the enplanements data, write down the differences you chose above using backshift operator notation.
+
+the data we use 1 first difference and 1 seasonal difference after Box Cox transformation. the model is **Arima(order = c(0,1,0), seasonal = c(0,1,0), lambda = "auto")**
+
+Backshift operation 
+$$(1-B)(1-B^m)y_t = (1-B - B^m +B^{m+1})*y_t
+                  =  y_t - y_{t-1} - y_{t-m} + y_{t-m-1}$$
+m = 12
+
+4. For your retail data (from Exercise 3 in Section 2.10), find the appropriate order of differencing (after transformation if necessary) to obtain stationary data.
+
+```{r}
+retail_data <- readxl::read_excel("/Users/yifeiliu/Documents/R/data/book_exercise/forecasting/retail.xlsx", skip = 1)
+
+myts <- ts(retail_data[, "A3349873A"],
+           frequency = 12, start = c(1982, 4))
+
+autoplot(myts)
+
+myts %>% BoxCox(lambda = "auto") %>% diff(lag = 12) %>% 
+  diff() %>% ur.kpss() %>% summary()
+
+
+
+```
+first difference + seasonal difference seams able to obtain stationary data. 
+
+6. Use R to simulate and plot some data from simple ARIMA models.
+
+a. Use the following R code to generate data from an AR(1) model with $\phi_1 = 0.6$ and $\sigma^2 = 1$.
+The process starts with $y_1 = 1$
+
+
+```{r}
+ar_1 <- function(ar) {
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 2:100) {
+    y[i] <- ar*y[i-1] + e[i]
+  }
+  return(y)
+}
+
+
+ar_1(0.6) %>%
+  autoplot() +
+  labs(title = "AR 1 model",
+       subtitle = "phi_1~= 0.6, ~sigma~= 1")
+
+
+```
+
+as the $\theta_1$ increase, variance increase. 
+
+```{r}
+ma_1 <- function(theta_1) {
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 2:100) {
+    y[i] <- theta_1*e[i-1] + e[i]
+  }
+  return(y)
+}
+
+ma_1(0.6) %>%
+  autoplot()
+
+
+map(list(0.2, 0.3, 0.5), ma_1) %>%
+  map(summary)
+
+```
+
+as I change $\theta_1$, the variance of plot increase. 
+
+e. generate ARMA model
+
+```{r}
+arma_1 <- function(phi_1, theta_1) {
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 2:100) {
+    y[i] <- phi_1 * y[i - 1] + e[i] + theta_1 * e[i -1]
+  }
+  return(y)
+}
+```
+
+f. Generate data from an AR(2) model 
+
+```{r}
+ar_2 <- function(phi_1, phi_2) {
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for (i in 3:100) {
+    y[i] <- phi_1 * y[i-1] + phi_2 * y[i-2] + e[i]
+  }
+  return(y)
+}
+
+x <- autoplot(ar_2(-0.8, 0.3))
+y <- autoplot(ar_2(0.8, 0.6))
+
+grid.arrange(x, y)
+
+```
+
+7. Consider wmurder, the numer of women murdered each year (per 100,000 standard population) in the Unietd State. 
+
+```{r}
+autoplot(wmurders)
+
+ndiffs(wmurders)
+
+wmurders %>% diff(differences = 2) %>%
+  ggtsdisplay()
+
+(fit <- Arima(wmurders, order = c(1,2,1)))
+
+checkresiduals(fit)
+kpss.test(fit$residuals)
+```
+the appropriate ARIMA(p,d,q) is (1,2,1)
+
+
+b. Should you include a constant in the model? Explain.
+ARIMA model of the data include twice differencing, base on 8.7, since d >1, no costant is allowed as a quadratic or higher order trend is particularly dangerous when forecasting. 
+
+c. Write this model in terms of the backshift operator.
+
+$(1-\phi B)(1-B)*y_t = (1 + \theta_1*B)*\epsilon_t$
+
+d. Fit the model using R and examine the residuals. Is the model satisfactory?
+
+```{r}
+autoplot(fit)
+
+```
+
+Since both inverse AR and MA roots are inside unit circle, mean this model is good for forecasting. 
+
+e. Forecast three times ahead. Check your forecasts by hand to make sure that you know how they have been calculated.
+
+
+```{r}
+wmurder_for <- forecast(fit, h = 3)
+```
+
+f. Create a plot of the series with forecasts and prediction intervals for the next three periods shown.
+
+```{r}
+autoplot(wmurder_for)
+```
+
+g. Does auto.arima() give the same model you have chosen? If not, which model do you think is better?
+
+auto.arima() give the same model
+
+8. Consider austa, the total international visitors to Australia (in millions) for the period 1980-2015.
+
+a. Use auto.arima() to find an appropriate ARIMA model. What model was selected. Check that the residuals look like white noise. Plot forecasts for the next 10 periods.
+
+```{r}
+(fit <- auto.arima(austa, stepwise = F, approximation = F))
+checkresiduals(fit)
+
+fit %>%
+  forecast(h = 10) %>%
+  autoplot() +
+  labs(subtitle = "Forecast for next 10 years",
+       x = "", y = "") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom")
+
+```
+
+b. Plot forecasts from an ARIMA(0,1,1) model with no drift and compare these to part a. Remove the MA term and plot again.
+
+```{r}
+(fit <- Arima(austa, order = c(0,1,0)))
+checkresiduals(fit)
+
+fit$residuals %>%
+  ggtsdisplay()
+
+kpss.test(fit$residuals)
+
+ur.df(fit$residuals) %>%
+  summary()
+
+fit %>%
+  forecast(h = 10) %>%
+  autoplot() +
+  labs(subtitle = "Forecast for next 10 years",
+       x = "", y = "") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom")
+
+```
+After remove the MA term, I find out the model still pass all the test. After plot the dataset, it look like a naive method forecast, don't reflect the increasing trend. 
+
+QUESTION: how should deal with case like this one. 
+
+c. Plot forecasts from an ARIMA(2,1,3) model with drift. Remove the constant and see what happens.
+
+```{r}
+(fit <- Arima(austa, order = c(2,1,3), include.drift = T))
+checkresiduals(fit)
+
+fit$residuals %>%
+  ggtsdisplay()
+
+kpss.test(fit$residuals)
+
+ur.df(fit$residuals) %>%
+  summary()
+
+fit %>%
+  forecast(h = 10) %>%
+  autoplot() +
+  labs(subtitle = "Forecast for next 10 years",
+       x = "", y = "") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom")
+
+
+```
+The upward trend are showing in the chart, but seems like there is a damped in this trend. 
+
+d. Plot forecasts from an ARIMA(0,0,1) model with a constant. Remove the MA term and plot again.
+
+```{r}
+(fit <- Arima(austa, order = c(0,0,1), include.constant = T))
+checkresiduals(fit)
+
+fit$residuals %>%
+  ggtsdisplay()
+
+kpss.test(fit$residuals)
+
+ur.df(fit$residuals) %>%
+  summary()
+
+fit %>%
+  forecast(h = 10) %>%
+  autoplot() +
+  labs(subtitle = "Forecast for next 10 years",
+       x = "", y = "") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom")
+
+```
+
+The forecast data regress to the mean really fast.
+
+e. Plot forecasts from an ARIMA(0,2,1) model with no constant.
+
+```{r}
+(fit <- Arima(austa, order = c(0,2,1),include.constant = F))
+checkresiduals(fit)
+
+fit$residuals %>%
+  ggtsdisplay()
+
+kpss.test(fit$residuals)
+
+ur.df(fit$residuals) %>%
+  summary()
+
+fit %>%
+  forecast(h = 10) %>%
+  autoplot() +
+  labs(subtitle = "Forecast for next 10 years",
+       x = "", y = "") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom")
+
+
+```
+still preserve the upward trend, but compare with ARIMA(0,1,1) model prediction interval's upper bound is much higher, but lower bounds are almost identical.
+
+9. For the usgdp series:
+
+a. if necessary, find a suitable Box-Cox transformation for the data;
+
+```{r}
+autoplot(usgdp)
+
+usgdp_bc <- usgdp %>%
+  BoxCox(lambda = "auto") 
+
+usgdp_bc %>%
+  autoplot()
+
+```
+
+b. fit a suitable ARIMA model to the transformed data using auto.arima();
+
+```{r}
+(usgdp_auto <- auto.arima(usgdp, lambda = "auto"))
+
+checkresiduals(usgdp_auto)
+
+autoplot(forecast(usgdp_auto, h = 15))
+
+```
+
+c. try some other plausible models by experimenting with the orders chosen;
+
+```{r}
+
+usgdp_bc %>%
+  ndiffs()
+
+usgdp_bc %>%
+  diff() %>%
+  ggtsdisplay()
+
+# looking at PACF chart, it suggest AR(1) model
+
+(usgdp_fit <- Arima(usgdp_bc, order = c(1,1,0), include.drift = T, lambda = "auto"))
+
+```
+
+ARIMA(1,1,0) model fit the data pretty well. 
+
+d. choose what you think is the best model and check the residual diagnostics;
+
+```{r}
+map(list(usgdp_auto, usgdp_fit), accuracy) 
+
+```
+ARIMA(1,1,0) with drift is the best model base on MAPE.
+
+e. produce forecasts of your fitted model. Do the forecasts look reasonable?
+
+```{r}
+usgdp_fit %>%
+  forecast(h = 20) %>%
+  autoplot()
+
+```
+Look reasonable, about to capture the trend. 
+
+f.compare the results with what you would obtain using ets() (with no transformation).
+
+```{r}
+usgdp_fit %>%
+  forecast(h = 12) %>%
+  autoplot()
+
+```
+
+
+10.
+
+a. Describe the time plot.
+
+```{r}
+autoplot(austourists)
+
+ggsubseriesplot(austourists)
+ggseasonplot(austourists)
+```
+
+In autoplot chart, we can see this series exhibit a upward trend, and seasonal pattern. And seasonal variance increase and the number of tourist increase. 
+In subseries plot, we can observe that all seasonal tourist number have increase trend, but quarter two have the lowest growthr rate. 
+In seasonal plot, we can see more clearly that quarter two tourist number clearly lower than all other quarters in the same year. 
+ 
+b. What can you learn from the ACF graph?
+
+```{r}
+ggAcf(austourists)
+
+```
+
+autocorrelation are slowly decrease, and with seasonal spike. base on this chart I assume the ARIMA model to fit this dataset should be ARIMA(1,,)(1,,)[4]
+
+c. What can you learn from the PACF graph?
+
+```{r}
+ggPacf(austourists)
+```
+
+Total five spikes
+
+e. Produce plots of the seasonally differenced data $(1-B^4)Y_t$ What model do these graphs suggest?
+
+```{r}
+austourists %>%
+  diff(lag = 4) %>%
+  ggtsdisplay()
+
+```
+The sigificant spike at lag 1 in the ACF function suggest a non-seasonal MA(1) component, the the significant spike at lat 4 in the ACF suggests a seasonal MA(1) component. The significant spike at PACF suggest a nonseasonal AR(1) and significant spike at lag 4 in PACF suggest a seasonal AR(1). 
+
+ARIMA(1,0,1)(1,1,1)[4]
+
+e. Does auto.arima() give the same model that you chose? If not, which model do you think is better?
+
+```{r}
+(fit <- auto.arima(austourists, stepwise = F, approximation = F))
+
+(fit_my <- Arima(austourists, order = c(1,0,1), seasonal = c(1,1,1), lambda = "auto"))
+
+map(list(fit, fit_my), accuracy)
+
+```
+
+Base on the result from MASE I can conclude my model is better than auto.arima model. But I want to use chapter 3, Evaluating forecast accuracy to measure accuracy.
+
+```{r}
+# split test set and training set. 
+
+austourists_train <- window(austourists, start = c(1998,1), end = c(2012,4))
+austourists_test <- window(austourists, start =  c(2013,1))
+
+auto_for <- Arima(austourists_train, order = c(1,0,0), seasonal = c(1,1,0), lambda = T,include.drift = T) %>%
+  forecast(h = 13)
+
+my_for <- Arima(austourists_train, order = c(1,0,1), seasonal = c(1,1,1), lambda = "auto") %>%
+  forecast(h = 13)
+
+autoplot(austourists) +
+  autolayer(auto_for, series = "auto", PI = F)+
+  autolayer(my_for, series = "my", PI = F)
+
+map2(list(auto_for, my_for), list(austourists_test), accuracy)
+
+  
+
+```
+
+it turn out that my model have a lower test set MASE score than the auto.arima model. 
+
+f. Write the model in terms of the backshift operator, then without using the backshift operator.
+ARIMA(1,0,1)(1,1,1)[4]
+
+$ARIMA(p,d,q)(P,D,Q)$
+
+$(1-\phi_1B)(1-\Phi_1B^4)(1-B^4)y_t = (1+\theta_1B)(1+\Theta_1B^4)\epsilon_t$ without a constant.
+
+11.
+
+a. Examine the 12-month moving average of this series to see what kind of trend is involved.
+
+```{r}
+autoplot(usmelec)
+
+usmelec_ma12 <- ma(usmelec, order = 12, centre = T)
+
+autoplot(usmelec, series = "Data") +
+  autolayer(usmelec_ma12, series = "MA 12") +
+  labs(x = "", y = "",
+       title = "Electricity monthly total net generation")
+
+```
+
+b. Do the data need transforming? If so, find a suitable transformation.
+
+```{r}
+# monthly data 30/31 days
+
+usemelec_tran <- tk_tbl(usmelec, rename_index = "Date") %>%
+  rename(original = value) %>%
+  mutate(dailyaverage = original / monthdays(usmelec),
+         boxcox = BoxCox(dailyaverage, lambda = "auto")) %>%
+  gather(-Date, value = value, key = type)
+
+usemelec_tran  %>%
+  ggplot(aes(Date, value)) +
+  geom_line() +
+  facet_wrap(~ type, scales = "free_y", ncol = 1) +
+  labs(x = "", y = "")
+  
+
+```
+
+c. Are the data stationary? If not, find an appropriate differencing which yields stationary data.
+
+```{r}
+usemelec_bc_daily <- usemelec_tran %>%
+  filter(type == "boxcox") %>%
+  select(-type) %>%
+  tk_ts(start = c(1973, 1), frequency = 12)
+
+ndiffs(usemelec_bc_daily)
+nsdiffs(usemelec_bc_daily)
+```
+As expected I need 1 seasonal difference and first difference make this data stationary. 
+
+d. Identify a couple of ARIMA models that might be useful in describing the time series. Which of your models is the best according to their AIC values?
+
+```{r}
+usemelec_bc_daily %>%
+  diff(lag = 12) %>%
+  diff() %>%
+  ggtsdisplay()
+
+```
+
+The 2 significant spike at lag 1 and 2 at ACF indicate a no-seasonal MA(2) component, and the significant spike at lag 12 suggest a seasonal MA(1) component, and significant spike at lag 1 and 2 in PACF suggest a non-seaonal AR(2) component, and signficant spike at lag 11, 12 suggetst a seasonal AR(2) component
+
+```{r}
+my_arima <- Arima(usemelec_bc_daily, order = c(2,1,2), seasonal = c(2,1,1))
+auto_model <- auto.arima(usemelec_bc_daily, approximation = F, stepwise = F)
+
+map(list(my_arima,auto_model), accuracy)
+
+x <- autoplot(usemelec_bc_daily) +
+  autolayer(forecast(my_arima, h = 36), series = "my_model", PI = F) 
+y <- autoplot(usemelec_bc_daily) +
+  autolayer(forecast(auto_model, h = 36), series = "auto_model", PI = F)
+
+grid.arrange(x, y, ncol = 1)
+
+```
+
+e. Estimate the parameters of your best model and do diagnostic testing on the residuals. Do the residuals resemble white noise? If not, try to find another ARIMA model which fits better.
+
+```{r}
+checkresiduals(my_arima)
+Box.test(my_arima$residuals, type = "Lj")
+
+```
+
+Since the $Q^*$, the result are not significant, p-value are relative large. Thus we can conclude that the residuals are not distinguishable from a white noise. 
+
+f. Forecast the next 15 years of electricity generation by the U.S. electric industry. Get the latest figures from the EIA to check the accuracy of your forecasts.
+
+```{r}
+us_elec_net <- tq_get("EIA/ELEC_GEN_ALL_US_99_M",
+                      get = "quandl")
+
+us_elec_net <- us_elec_net %>%
+  mutate(value = value / 1000)
+
+us_elec_net_ts <- tk_ts(us_elec_net, select = value, start = c(2001, 1), frequency = 12, silent = T)
+
+us_elec_net <- c(usmelec, window(us_elec_net_ts, start = c(2013, 7)))
+
+us_elec_net <- ts(us_elec_net, start = c(1973, 1), frequency = 12)
+
+autoplot(us_elec_net)
+
+  
+us_elec_bc_daily <- us_elec_net %>%
+  tk_tbl() %>%
+  mutate(daily = value / monthdays(us_elec_net),
+         daily = BoxCox(daily, lambda = "auto")) %>%
+  select(-value) %>%
+  tk_ts(select = daily, start = c(1973, 1), frequency = 12, silent = T)
+
+autoplot(us_elec_bc_daily)
+```
+
+After combine the exist data and data from EIA. we can do the forecasting now
+
+```{r}
+us_elec_train <- window(us_elec_bc_daily, end = c(2004, 1))
+us_elec_test <- window(us_elec_bc_daily, start = c(2004, 1))
+
+my_model <- Arima(us_elec_train, order = c(2,1,2), seasonal = c(2,1,1))
+auto_model <- auto.arima(us_elec_train, approximation = F, stepwise = F)
+ets_model <- ets(us_elec_train, damped = T)
+
+my_for <- forecast(my_model, h = 15*12)
+auto_for <- forecast(auto_model, h = 15*12)
+ets_for <- forecast(ets_model, h = 15*12)
+  
+  
+x <- autoplot(us_elec_bc_daily) +
+  autolayer(my_for, series = "my_model", alpha = 0.5) +
+  labs(caption  = "ARIMA(0,1,2)(0,1,1)[12]",
+       x = "", y = "",
+       title = "Forecast electricity Daily total net generation",
+       subtitle = "Data Source: EIA") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+y <- autoplot(us_elec_bc_daily) +
+  autolayer(my_for, series = "auto_model", alpha = 0.5) +
+  labs(caption  = "ARIMA(2,0,1)(0,1,1)[12] with drift ",
+       x = "", y = "") +
+  theme(legend.position = "none")
+z <- autoplot(us_elec_bc_daily) +
+  autolayer(ets_for, series = "ets_model", alpha = 0.5) +
+  labs(caption  = "ETS(M,Ad,M)",
+       x = "", y = "") +
+  theme(legend.position = "none")
+
+grid.arrange(x, y,z, ncol = 1)
+```
+
+I fit three model on this dataset, both ARIMA model fail to capture the damped trend at the beginning of 2000. But the ETS model perform exceptionally well, able to capture this trend. 
+
+g. Eventually, the prediction intervals are so wide that the forecasts are not particularly useful. How many years of forecasts do you think are sufficiently accurate to be usable?
+
+I think in this case, 4 years of forecast are relative accuracy. But somehow, ETS model almost 100% accuracy for 15 years, unbelievable.
+
+QUESTION: why both arima model fail to captrue the damped trend, but simple ets model is able to capture this trend. 
+
+12.
+
+a. if necessary, find a suitable Box-Cox transformation for the data;
+
+```{r}
+autoplot(mcopper)
+autoplot(BoxCox(mcopper, lambda = "auto"))
+
+mcopper_bc <- BoxCox(mcopper, lambda = "auto")
+```
+
+b. fit a suitable ARIMA model to the transformed data using auto.arima();
+
+```{r}
+auto_model <- auto.arima(mcopper, lambda = "auto")
+checkresiduals(auto_model)
+
+```
+
+c. try some other plausible models by experimenting with the orders chosen;
+
+```{r}
+ndiffs(mcopper)
+nsdiffs(mcopper)
+
+ggsubseriesplot(mcopper)
+```
+
+
+```{r}
+mcopper_bc %>%
+  diff() %>%
+  ggtsdisplay()
+
+my_model <- Arima(mcopper, order = c(1,1,1), lambda = "auto", include.drift = T, biasadj =T)
+
+checkresiduals(my_model)
+
+map(list(my_model, auto_model), accuracy)
+
+```
+I choose ARIMA(1,1,1) with drift
+
+d. choose what you think is the best model and check the residual diagnostics;
+
+```{r}
+checkresiduals(my_model)
+kpss.test(my_model$residuals)
+
+ur.df(my_model$residuals) %>%
+  summary()
+
+```
+it pass the all the residual test. 
+
+e. produce forecasts of your fitted model. Do the forecasts look reasonable?
+
+```{r}
+autoplot(mcopper) +
+  autolayer(forecast(my_model, h = 36), series = "my_model")
+
+```
+
+No the series does not make any sense in this forecast. 
+
+f. compare the results with what you would obtain using ets() (with no transformation).
+
+```{r}
+ets_model <- ets(mcopper)
+
+autoplot(mcopper) +
+  autolayer(forecast(ets_model, h = 36), series = "ets_model")
+
+
+
+```
+
+Both model does not make that much sense. 
+
+13. 
+
+a. Do the data need transforming? If so, find a suitable transformation.
+
+```{r}
+autoplot(hsales)
+# it does, need calender adjustment, population adjustment, inflation adjustment (in chapter 3, Forecast's toolbox.)
+
+hsales_daily <- hsales / monthdays(hsales)
+  
+  
+autoplot(auscafe)
+# it does, need calender adjustment, population adjustment, inflation adjustment, Box Cox transformations. (in chapter 3, Forecast's toolbox.)
+
+auscafe_bc_daily <- BoxCox((auscafe/ monthdays(auscafe)), lambda = "auto")
+
+
+autoplot(qauselec)
+# it does, need calender adjustment, Box Cox transformations. (in chapter 3, Forecast's toolbox.)
+
+qauselec_bc <- BoxCox(qauselec, lambda = "auto")
+
+autoplot(qcement)
+# it does, need calender adjustment, Box Cox transformations. (in chapter 3, Forecast's toolbox.)
+qcement_bc <- BoxCox(qcement, lambda = "auto")
+
+
+autoplot(qgas)
+# it does, need calender adjustment, Box Cox transformations. (in chapter 3, Forecast's toolbox.)
+qgas_bc <- BoxCox(qgas, lambda = "auto")
+
+```
+
+
+b. Are the data stationary? If not, find an appropriate differencing which yields stationary data.
+
+
+
+```{r}
+nsdiffs(hsales_daily)
+
+ndiffs(hsales_daily)
+
+
+# base on these two result, I decide the data need 1 seasona difference
+
+kpss.test(diff(hsales_daily, lag = 12))
+
+diff(hsales_daily, lag = 12) %>%
+  ggtsdisplay()
+
+```
+After the seasonal difference, the dataset appear to be stationary. 
+
+c. Identify a couple of ARIMA models that might be useful in describing the time series. Which of your models is the best according to their AIC values?
+
+```{r}
+hsales_daily %>%
+  diff(lag = 12) %>%
+  ggtsdisplay()
+
+(my_model <- Arima(hsales_daily, order = c(2,0,2), seasonal = c(2,1,0), include.drift = T))
+
+
+```
+
+d. Estimate the parameters of your best model and do diagnostic testing on the residuals. Do the residuals resemble white noise? If not, try to find another ARIMA model which fits better.
+
+```{r}
+checkresiduals(my_model)
+ur.df()
+
+```
+the residuals look like white noise. 
+
+e. Forecast the next 24 months of data using your preferred model.
+
+```{r}
+forecast(my_model, h = 24) %>%
+  autoplot()
+
+```
+
+f. Compare the forecasts obtained using ets().
+
+```{r}
+ets_model <- ets(hsales_daily, damped = T)
+
+
+x <- forecast(my_model, h = 24) %>%
+  autoplot()
+y <- forecast(ets_model, h = 24) %>%
+  autoplot()
+
+grid.arrange(x, y, ncol = 1)
+
+map(list(my_model, ets_model), accuracy)
+
+# use time series cross-valiation to see which one "forecast" better
+
+far1 <- function(x, h) {
+  forecast(forecast(my_model, h = h))
+}
+
+far2 <- function(x, h) {
+  forecast(forecast(ets_model, h = h))
+}
+
+
+tsCV(hsales_daily, far1, h=1)^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+tsCV(hsales_daily, far2, h=1)^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+
+
+```
+Base on these accuracy result, ETS model fit existing data better. We find out that ETS have a smaller RMSE value by using time series cross-validation. 
+
+14. 
+
+```{r}
+
+hsales_de_sea <- stl(hsales_daily, t.window = 13,s.window="periodic", robust = T) %>%
+  seasadj()
+
+hsales_daily %>%
+  stlf(t.window = 13,s.window="periodic", robust = T, method = "arima", h = 24) %>%
+  autoplot()
+
+```
+
+The new model did nothing, no seasonal trend of anything, just like naive method. 
+
+15. 
+
+a. develop an appropriate seasonal ARIMA model;
+
+```{r}
+retail_data <- readxl::read_excel("/Users/yifeiliu/Documents/R/data/book_exercise/forecasting/retail.xlsx", skip = 1)
+
+myts <- ts(retail_data[, "A3349873A"],
+           frequency = 12, start = c(1982, 4))
+
+autoplot(myts)
+
+ndiffs(myts)
+nsdiffs(myts)
+
+myts %>%
+  diff(lag = 12) %>%
+  diff() %>%
+  ggtsdisplay()
+
+
+```
+Base on ndiffs and nsdiffs we know we are dealing with seasonal difference and first order difference. 
+And base on the chart, we see two spike at lag1 and 2 indicate a non-seaonal MA(2) mode, and seasonal MA(1) due to spike at lag12. In PACF chart, we see the spike at lag1 and lag2 indicate a non-seaonal AR(2) model and a seasonal AR(1) component due to spike at lag 12. (Base on 8.9 example)
+
+```{r}
+(my_model <- Arima(myts, order = c(2,1,2), seasonal = c(1,1,1), lambda = "auto"))
+
+checkresiduals(my_model)
+
+forecast(my_model, h = 24) %>%
+  autoplot()
+
+
+auto.arima(myts)
+
+
+```
+
+
+
+
+b. compare the forecasts with those you obtained in earlier chapters;
+
+c. 
+
+```{r}
+retail_real <- read_xls("/Users/yifeiliu/Documents/R/data/book_exercise/forecasting/8501011.xls", sheet = "Data1", skip = 9)
+
+retail_real_ts <- ts(retail_real[, "A3349873A"],
+           frequency = 12, start = c(1982, 4))
+
+my_for <- forecast(my_model, h = 34)
+auto_for <- forecast(auto.arima(myts, lambda = "auto"), h = 34)
+ets_for <- forecast(ets(myts, damped = T, lambda = "auto"), h = 34)
+
+map2(list(my_for, auto_for, ets_for), list(retail_real_ts), accuracy)
+
+
+```
+You can see in this auto.arim have the lower MAPE value. 
+Let's plot these two forecast together. 
+
+```{r}
+
+x <- forecast(my_model, h = 34) %>%
+  autoplot()
+y <- forecast(auto.arima(myts, lambda = "auto"), h = 34) %>%
+  autoplot()
+z <- forecast(ets(myts, damped = T, lambda = "auto"), h = 34) %>%
+  autoplot()
+
+grid.arrange(x, y,z, ncol = 1)
+
+
+```
+
+16. 
+
+a. Produce a time plot of the time series.
+
+```{r}
+autoplot(sheep)
+
+```
+
+The frequency is 1, so could not bea seasonal. The data exhibit a downward trend. 
+
+b. Assume you decide to fit the following model
+
+$(y_t - y_{t-1}) - \phi_1(y_{t-1} - y_{t-2}) - \phi_2(y_{t-2} - y_{t-3}) - \phi_3(y_{t-3} - y_{t-4}) = \epsilon_t$
+$(1-\phi_1*B - \phi_2*B^2 - \phi_3*B^3)(1-B)y_t = \epsilon_t$
+The ARIMA model is ARIMA(3,1,0)
+
+c.  By examining the ACF and PACF of the differenced data, explain why this model is appropriate.
+
+
+```{r}
+(my_model <- Arima(sheep, order = c(3,1,0)))
+
+checkresiduals(my_model)
+
+
+```
+
+After checking the residuals, I find the model is appropriate. 
+
+d. The last five values of the series are given below
+
+
+```{r}
+sheep_1940 = sheep[73] + 0.42 * (sheep[73] - sheep[72]) - 0.2018 * (sheep[72] - sheep[71]) - 0.3044 * (sheep[71] - sheep[70])
+
+sheep_1941 = sheep_1940 + 0.42 * (sheep_1940 - sheep[73]) - 0.2018 * (sheep[73] - sheep[72]) - 0.3044 * (sheep[72] - sheep[71])
+
+sheep_1942 = sheep_1941 + 0.42 * (sheep_1941 - sheep_1940) - 0.2018 * (sheep_1940 - sheep[73]) - 0.3044 * (sheep[73] - sheep[72])
+
+forecast(my_model, h = 3)
+
+```
+
+e. Now fit the model in R and obtain the forecasts using forecast. How are they different from yours? Why?
+
+The difference is due to the coeffieicent is rounded. 
+
+
+17. 
+
+a. Produce a time plot of the data.
+
+```{r}
+autoplot(bicoal)
+
+```
+
+b. You decide to fit the following model to the series:
+
+```{r}
+(my_model <- Arima(bicoal, order = c(4,0,0)))
+
+coal_intercept <- my_model$coef[5] * (1- my_model$coef[4]- my_model$coef[3] -my_model$coef[2] - my_model$coef[1])
+
+coal_intercept
+```
+
+The ARIMA model is ARIMA(4,1,0) with drift.
+
+```{r}
+ggtsdisplay(bicoal)
+
+```
+
+ACF show sinusoidally decrease value, and PACF show spike at lag1 and 4. So AR(4) model is appropriate. 
+
+d. The last five values of the series are given below.
+
+```{r}
+coal_1969 = coal_intercept + my_model$coef[1]*bicoal[49] + my_model$coef[2]*bicoal[48] + my_model$coef[3]*bicoal[47] + my_model$coef[4]*bicoal[46]
+
+coal_1970 = coal_intercept + my_model$coef[1]*coal_1969 + my_model$coef[2]*bicoal[49] + my_model$coef[3]*bicoal[48] + my_model$coef[4]*bicoal[47]
+
+coal_1971 = coal_intercept + my_model$coef[1]*coal_1970 + my_model$coef[2]*coal_1969 + my_model$coef[3]*bicoal[49] + my_model$coef[4]*bicoal[48]
+
+c(coal_1969, coal_1970, coal_1971)
+
+forecast(my_model, h = 3)
+
+```
+The result is the same as forecasted. 
+
+
+e. Now fit the model in R and obtain the forecasts from the same model. How are they different from yours? Why?
+
+The result is the same. 
+
+18. Seems like this package does not work anymore, I just get some data from FRED and do the forecast and accuracy comparison. 
+
+a. Select a time series from Datamarket. Then copy its short URL and import the data using
+
+```{r}
+vehicle <- tq_get("FRED/TOTALNSA",
+                   get = "quandl")
+
+vehicle_ts <- tk_ts(vehicle, start = c(1976, 1), frequency = 12, silent = T)
+vehicle_ts_bc <- BoxCox(vehicle_ts, lambda = "auto")
+
+
+autoplot(vehicle_ts_bc)
+
+nsdiffs(vehicle_ts_bc)
+ndiffs(vehicle_ts_bc)
+
+vehicle_ts %>%
+  diff(lag = 12) %>%
+  diff() %>%
+  ggtsdisplay()
+
+```
+
+In ACF chart, we can see there are spike at lag1 which show a non-seasonal MA1 component, and sipkes around 12 and 24, I think show a seasonal MA(3) compoent. 
+
+In PACF chart, we can see skipe at lag 1,2,3 which show a non-seaonal AR4 component, adn spikes around 12, 24, show a seasonal AR(3) component. 
+
+```{r}
+(my_model <- Arima(vehicle_ts_bc, order = c(1,0,1), seasonal = c(0,1,2)))
+
+forecast(my_model, h = 12*4) %>%
+  autoplot()
+
+checkresiduals(my_model)
+
+```
+
+
+e. Now try to identify an appropriate ETS model.
+
+```{r}
+ets_model <- ets(vehicle_ts_bc, damped = T)
+ets_model
+
+
+
+```
+
+f. Do residual diagnostic checking of your ETS model. Are the residuals white noise?
+
+```{r}
+checkresiduals(ets_model)
+
+```
+
+The residuals of this model is white noise. 
+
+g.
+
+```{r}
+forecast(ets_model, h = 12*4) %>%
+  autoplot()
+
+```
+
+h. Which of the two models do you prefer?
+
+```{r}
+
+far1 <- function(x, h) {
+  forecast(forecast(my_model, h = h))
+}
+
+far2 <- function(x, h) {
+  forecast(forecast(ets_model, h = h))
+}
+
+
+tsCV(vehicle_ts_bc, far1, h=1)^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+tsCV(vehicle_ts_bc, far2, h=1)^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+
+
+```
+In this case, I chhoose ARIMA(1,0,1)(0,1,2)[12] model because it have a lower RMSE score obtained via time series cross-validation compare with ETS(A,Ad,A) model. 
+
+
+

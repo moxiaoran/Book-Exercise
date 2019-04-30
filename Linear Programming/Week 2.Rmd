@@ -1,0 +1,119 @@
+---
+title: "Week 2"
+author: "Yifei Liu"
+date: "1/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## An Game Theory Introduction
+
+```{r}
+library(lpSolve)
+```
+
+
+
+
+```{r}
+# knapsack issues
+
+# Capital Budgeting Problem
+
+p = c(8000, 11000, 6000, 4000)
+w = c(6700, 10000, 5500, 3400)
+k = 19000
+result <- mknapsack(p,w, k, -1)
+
+
+```
+
+```{r}
+# Capital Budgeting Problem add constrain
+
+f_obj = c(8000, 11000, 6000, 4000)
+f_con = matrix(c(6700, 10000, 5500, 3400, 1,1,1,1,0,1,0,-1,1,0,1,0), ncol = 4, byrow = T)
+f_dir <- c("<=", "<=","<=","<=")
+f_rhs <- c(19000, 2,0,1)
+test <- lp("max", f_obj, f_con, f_dir, f_rhs, int.vec = 1:4)
+
+test$objval
+test$solution
+```
+
+```{r}
+# Combinatorial auctions
+
+f_obj = c(6,3,12,12,8,16,13)
+f_con <- matrix(c(1,0,0,1,0,1,1,
+                  0,1,0,0,1,0,1,
+                  0,0,1,1,0,1,1,
+                  0,0,1,0,1,1,0), byrow = T, ncol = 7)
+f_dir <- c("<=", "<=","<=","<=")
+f_rhs <- c(1,1,1,1)
+test <- lp("max", f_obj, f_con, f_dir, f_rhs)
+
+test$solution
+```
+
+
+```{r}
+# Banking Operations
+
+# Decision Variables: think about people start work at that day. 
+
+f_obj = c(1,1,1,1,1,1,1)
+
+f_con <- matrix(c(1,0,0,1,1,1,1,
+                  1,1,0,0,1,1,1,
+                  1,1,1,0,0,1,1,
+                  1,1,1,1,0,0,1,
+                  1,1,1,1,1,0,0,
+                  0,1,1,1,1,1,0,
+                  0,0,1,1,1,1,1), byrow = 1, ncol = 7)
+f_dir <- c(rep(">=", 7))
+f_rhs <- c(14,13,15,16,19,18,11)
+test <- lp("min", f_obj, f_con, f_dir, f_rhs)
+
+test$solution
+test$objval
+```
+
+
+
+
+
+
+```{r}
+f_obj <- c(0,0,0,-1)
+
+f_con <- matrix(c(4,1,5,-1,
+                  5,1,7,-1,
+                  7,2,3,-1,
+                  1,1,1,0,
+                  0,0,0,1), byrow = T, ncol = 4)
+
+f_dir <- c(">=",">=",">=","=", ">=")
+f_rhs <- c(0,0,0,1,0)
+
+result <- lp("max", f_obj, f_con, f_dir, f_rhs)
+```
+
+1. Mixing strategyies improve payoff
+2. Min $$x^T*a$$
+
+Questions, Check player 2 solve player 1st dual problem. 
+
+
+player 1 = c(..,...,...,...) probability + player 2 = c(..,...,...,...) is call nush equalibum
+
+
+
+
+
+
+
+

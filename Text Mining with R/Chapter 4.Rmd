@@ -1,0 +1,273 @@
+---
+title: "chapter 4: Relationships Between words: N-grams and Correlations"
+author: "Yifei Liu"
+date: "3/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(tidytext)
+library(janeaustenr)
+library(pdftools)
+library(stringr)
+library(tidyr)
+library(gutenbergr)
+library(pdftools)
+library(tm)
+library(tm.plugin.webmining)
+library(purrr)
+library(methods)
+library(Matrix)
+library(scales)
+library(stringr)
+library(reshape2)
+library(ggraph)
+library(widyr)
+library(wordcloud)
+library(widyr)
+library(igraph)
+library(subtools)
+library(topicmodels)
+library(mallet)
+theme_set(theme_minimal())
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+```
+
+So far we've consider words as individual units, and considered there relationship to sentiemtn or to documents. we can use token = "ngrams" argument to divided text by pair of adjacent words rather than just by individual ones. 
+
+## Tokenizing by N-gram
+```{r}
+austen_bigrams <- austen_books() %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+austen_bigrams
+
+```
+
+
+```{r}
+austen_bigrams %>% 
+  count(bigram, sort = T)
+
+bigrams_separated <- austen_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+bigram_count <- bigrams_filtered %>%
+  count(word1, word2, sort = T)
+
+bigram_count
+```
+
+```{r}
+bigram_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_united
+
+
+austen_books() %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 3) %>%
+  separate(bigram, c("word1", "word2", "word3"), sep = " ") %>% 
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!word3 %in% stop_words$word) %>%
+  count(word1, word2, word3, sort = T)
+```
+
+## Analyzing Bigrams
+
+```{r}
+bigrams_filtered %>%
+  filter(word2 == "street") %>%
+  count(book, word1, sort = T)
+```
+
+```{r}
+bigram_tf_idf <- bigram_united %>%
+  count(book, bigram) %>%
+  bind_tf_idf(bigram, book, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf %>%
+  mutate(bigram = factor(bigram, rev(unique(bigram)))) %>%
+  group_by(book) %>%
+  top_n(15) %>%
+  ungroup() %>%
+  ggplot(aes(bigram, tf_idf, fill = book)) +
+  geom_col(show.legend = F) +
+  coord_flip() +
+  facet_wrap(~book, scales = "free", ncol = 2) +
+  labs(x = NULL, y = NULL)
+```
+## Using Bigrams to provide context in sentiment analysis
+
+```{r}
+bigrams_separated %>%
+  filter(word1 == "not") %>%
+  count(word1, word2, sort = T)
+```
+
+```{r}
+AFINN <- get_sentiments("afinn")
+
+AFINN
+
+not_words <- bigrams_separated %>%
+  filter(word1 == "not") %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word2, score, sort = T) %>%
+  ungroup()
+
+not_words
+
+not_words %>%
+  mutate(contribution = n * score) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(20) %>%
+  mutate(word2 = fct_reorder(word2, contribution)) %>%
+  ggplot(aes(word2, n * score, fill = n * score > 0)) +
+  geom_col(show.legend = F) +
+  labs(x = "Word preceded by \"not\"",
+       y = "Sentiment Score * number of occurances") +
+  coord_flip()
+
+```
+
+## Visualizing a Network of bigrams with ggraph
+
+```{r}
+bigram_count
+
+bigram_graph <- bigram_count %>%
+  filter(n > 20) %>%
+  graph_from_data_frame()
+
+bigram_graph
+```
+we can use ggraph package to plot this igraph
+
+```{r}
+set.seed(2017)
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+set.seed(2016)
+a <- grid::arrow(type = "closed", length = unit(.15, "inches")) 
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = F,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+
+```
+
+
+```{r}
+count_bigrams <- function(dataset) {
+  dataset %>%
+    unnest_tokens(bigrams, text, token = "ngrams", n = 2) %>%
+    separate(bigrams, c("word1", "word2"), sep = " ") %>%
+    filter(!word1 %in% stop_words$word,
+           !word2 %in% stop_words$word) %>%
+    count(word1, word2, sort = T)
+}
+
+visualize_bigrams <- function(bigrams) {
+  set.seed(2016) 
+  a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+  bigrams %>%
+    graph_from_data_frame() %>% 
+    ggraph(layout = "fr") + 
+    geom_edge_link(aes(edge_alpha = n), show.legend = FALSE, arrow = a) + 
+    geom_node_point(color = "lightblue", size = 5) + 
+    geom_node_text(aes(label = name), vjust = 1, hjust = 1) + 
+    theme_void()
+
+}
+
+
+
+kjv <- gutenberg_download(10)
+
+kjv_bigrams <- kjv %>%
+  count_bigrams()
+
+kjv_bigrams %>%
+  filter(n > 40,
+         !str_detect(word1, "\\d"),
+         !str_detect(word2, "\\d")) %>%
+  visualize_bigrams()
+
+
+```
+## Counting and Correlatiing Pairs of words with widyr package
+
+
+```{r}
+austen_section_words <- austen_books() %>%
+  filter(book == "Pride & Prejudice") %>%
+  mutate(section = row_number() %/% 10) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word)
+
+
+word_pairs <- austen_section_words %>%
+  pairwise_count(word, section, sort = T)
+
+word_pairs
+
+word_cors <- austen_section_words %>%
+  group_by(word) %>%
+  filter(n() > 20) %>%
+  pairwise_cor(word, section, sort = T)
+
+word_cors
+
+
+word_cors %>%
+  filter(item1 == "pounds")
+
+
+word_cors %>%
+  filter(item1 %in% c("elizabeth", "pounds", "married", "pride")) %>%
+  group_by(item1) %>%
+  top_n(6) %>%
+  ungroup() %>%
+  mutate(item2 = fct_reorder(item2, correlation)) %>%
+  ggplot(aes(item2, correlation)) +
+  geom_col(show.legend = F, fill = "midnightblue") +
+  facet_wrap(~ item1, scales = "free", ncol= 2) +
+  coord_flip()
+
+set.seed(2016)
+
+word_cors %>%
+  filter(correlation > .15) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = F) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = T) +
+  theme_void()
+
+
+```
+
+

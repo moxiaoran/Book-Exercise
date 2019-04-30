@@ -1,0 +1,84 @@
+---
+title: "Chapter 2 - Asset Prices to Returns"
+author: "Yifei Liu"
+date: "1/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse) 
+library(lubridate) 
+library(readxl) 
+library(highcharter) 
+library(tidyquant)
+library(timetk) 
+library(tibbletime) 
+library(quantmod) 
+library(PerformanceAnalytics) 
+library(PortfolioAnalytics)
+library(scales)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+theme_set(theme_tq())
+
+```
+
+
+## Get stock price and get monthly return
+
+```{r}
+symbols <- c("SPY","EFA", "IJS", "EEM","AGG")
+
+prices <- tq_get(symbols,
+                 get = "stock.prices",
+                 from = "2012-12-31",
+                 to = "2018-12-31") 
+
+return_monthly <- prices %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "monthly",
+               col_rename = "Ra")
+
+```
+
+
+### 2.6 Visualizing Asset Returns in the tidyverse
+
+```{r}
+return_monthly %>%
+  ggplot(aes(Ra, fill = symbol)) +
+  geom_histogram(alpha = .45, binwidth = .005) +
+  labs(title = "Monthly Returns Since 2013") +
+  scale_x_continuous(labels = percent_format()) +
+  theme(legend.position = c(0.1, 0.7))
+
+return_monthly %>%
+  ggplot(aes(Ra)) +
+  geom_histogram(aes(fill = symbol), alpha = .45, binwidth = .01) +
+  geom_density(aes(color = symbol), alpha = 0.45) +
+  facet_wrap(~ symbol) +
+  labs(title = "Monthly Returns Since 2013") +
+  scale_x_continuous(labels = percent_format()) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,275 @@
+---
+title: "Chapter 4 - Classification"
+author: "Yifei Liu"
+date: "1/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(MASS)
+library(ISLR)
+library(tidyverse)
+library(GGally)
+library(broom)
+library(scales)
+library(forecast)
+library(ggcorrplot)
+library(class)
+library(caret)
+library(ggfortify)
+library(car)
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+
+theme_set(theme_minimal())
+
+```
+
+
+```{r}
+names(Default)
+
+ggplot(aes(balance, income, color = default, shape = default), data = Default) +
+  geom_point(alpha = 1/4)
+
+
+ggplot(aes(default, balance, fill = default), data = Default) +
+  geom_boxplot(show.legend = F)
+
+ggplot(aes(default, income), data = Default) +
+  geom_jitter(alpha = 0.5, height = 0, width = 0.25, aes(color = default)) +
+  geom_boxplot(show.legend = F, aes(fill = default), alpha = 0.25) +
+  scale_color_manual(values = c("blue", "red")) +
+  scale_fill_manual(values = c("blue", "red")) +
+  theme_bw() +
+  labs(title = "Credit Card Default Data",
+       subtitle = "A simulated data set containing information on ten thousand customers",
+       color = "Default")
+
+```
+
+
+### 4.3.1 the logistic model
+
+```{r}
+models <- glm(default ~ balance, data = Default, family = "binomial")
+summary(models)
+
+predict(models, data.frame(balance = seq(0, 2500, by = 100)))
+
+ggplot(Default, aes(x = balance, y = default)) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), se = F)
+
+
+models <- glm(default ~ student, data = Default, family = "binomial")
+
+models %>%
+  augment(newdata = data.frame(balance = c("Yes", "No")), type.predict = "response")
+
+```
+
+### 4.3.4 Multiple Logistic Regression
+
+```{r}
+default_processed <- Default %>%
+  na.omit() %>%
+  mutate(balance_a = case_when(
+    balance < 1000 ~ "Low",
+    balance < 1500 ~ "medium",
+    TRUE ~ "high"
+  )) %>%
+  group_by(balance_a, student) %>%
+  summarize(rate = mean(default == "Yes"))
+  
+default_processed %>%
+  ungroup() %>%
+  mutate(balance_a = factor(balance_a, levels = c("Low", "medium", "high"))) %>%
+  ggplot(aes(balance_a, rate, color = student)) +
+  geom_point() +
+  geom_line(aes(group = student)) +
+  scale_y_continuous(labels = percent_format())
+  
+
+ggplot(Default, aes(student, balance, fill = student)) +
+  geom_boxplot(show.legend = F) +
+  labs(x = "Student Status",
+       y = "Credict Card Balance")
+
+
+models <- glm(default ~ balance + income + student, Default, family = "binomial")
+summary(models)
+
+predict(models, data.frame(student = c("No", "Yes"), income = c(40000, 40000), balance = c(1500, 1500)), type = "response")
+
+models %>%
+  augment(newdata = data.frame(student = c("No", "Yes"), income = c(40000, 40000), balance = c(1500, 1500)), type.predict = "response")
+
+```
+
+
+### 4.3.5 Logistic Regression for >2 Response Classes
+
+We tend to use discriminant analysis for multiple class classification.
+
+### 4.4 Linear Discriminant Analysis
+
+### 4.4.1 Using Bayes' Theorem for Classification
+
+### 4.4.3 Linear Discriminant Analysis for p > 1
+
+
+```{r}
+ggscatmat(iris, color = "Species")
+
+# training dataset 80%
+sample_size <- floor(.8 * nrow(Default))
+
+default_train <- sample(seq_len(nrow(Default)), size = sample_size)
+
+train_set <- Default[default_train, ]
+test_set <- Default[-default_train, ]
+
+models <- lda(default ~., data = train_set)
+
+result <- predict(models, test_set)
+
+```
+
+
+## 4.5 A Comparison of Classification Methods
+
+## 4.6 Lab: Logistic Regression, LDA, QDA and KNN
+
+### 4.6.1 The Stock Market Data
+
+```{r}
+data("Smarket")
+
+pairs(Smarket, col = Smarket$Direction)
+
+```
+
+Fit a logistic regression model
+
+```{r}
+glm_fit <- glm(Direction ~. -Year - Today, data = Smarket, family = "binomial")
+
+summary(glm_fit)
+
+augment(glm_fit, newdata = Smarket[!train, ], type.predict = "response")  %>%
+  mutate(Prediction = ifelse(.fitted > 0.5, "Up", "Down"),
+         Result = ifelse(Prediction == Direction, 1, 0)) %>%
+  summarize(result = mean(Result))
+
+```
+we can see the result is not very good, as we expected, around 0.5216. Now we can divided the data into training and testing dataset
+
+```{r}
+train = Smarket$Year < 2005
+
+glm_train <- glm(Direction ~. - Year - Today, data = Smarket, family = "binomial", subset = train)
+
+newdata <- Smarket[!train, ]
+
+augment(glm_fit, newdata = newdata, type.predict = "response")  %>%
+  mutate(Prediction = ifelse(.fitted > 0.5, "Up", "Down"),
+         Result = ifelse(Prediction == Direction, 1, 0)) %>%
+  summarize(result = mean(Result))
+
+```
+
+
+### 4.6.3 Linear Discriminant Analysis
+
+Stock data, I do not expected to see any pattern.
+
+```{r}
+lda_fit <- lda(Direction ~  Lag1 + Lag2, data = Smarket[Smarket$Year < 2005,])
+
+newdata = subset(Smarket, Year == 2005)
+
+plot(lda_fit)
+
+lda_predict <- predict(lda_fit, Smarket[Smarket$Year == 2005,])
+
+lda_predict <- data.frame(lda_predict)
+
+table(lda_predict$class, Smarket[Smarket$Year == 2005,]$Direction)
+
+mean(lda_predict$class == Smarket[Smarket$Year == 2005,]$Direction)
+
+```
+
+
+
+### 4.6.4 Quadratic Discriminant Analysis
+
+```{r}
+qda_fit <- qda(Direction ~ Lag1 + Lag2, data = Smarket, subset = train)
+qda_fit
+
+
+qda_predict <- predict(qda_fit, Smarket[Smarket$Year == 2005,])
+
+qda_predict <- data.frame(qda_predict)
+
+table(qda_predict$class, Smarket[Smarket$Year == 2005,]$Direction)
+
+mean(qda_predict$class == Smarket[Smarket$Year == 2005,]$Direction)
+
+
+
+```
+
+### 4.6.5 K-Nearest Neighbors
+
+```{r}
+
+smarket_lag <- Smarket[, c("Lag2", "Lag1")]
+
+knn_predict <- knn(smarket_lag[train, ], smarket_lag[!train, ], Smarket$Direction[train], k = 1)
+
+table(knn_predict, Smarket$Direction[!train])
+mean(knn_predict==Smarket$Direction[!train])
+
+```
+
+### 4.6.6 An Application to Caravan Insurance Data
+
+```{r}
+Caravan %>%
+  count(Purchase)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+Lecture:
+
+[In-depth introduction to machine learning in 15 hours of expert videos](https://www.dataschool.io/15-hours-of-expert-machine-learning-videos/)
+
+https://www.youtube.com/watch?v=RfrGiG1Hm3M&list=PL5-da3qGB5IC4vaDba5ClatUmFppXLAhE
+
+
+
+
+
+
+
+
+
+
+

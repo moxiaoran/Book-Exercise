@@ -1,0 +1,74 @@
+---
+title: "Chapter 1"
+author: "Yifei Liu"
+date: "12/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ISLR)
+library(tidyverse)
+
+theme_set(theme_minimal())
+
+```
+
+```{r}
+Wage %>%
+  tbl_df() %>%
+  ggplot(aes(age, wage)) +
+  geom_point(alpha = .5) +
+  geom_smooth(method = "auto")
+
+Wage %>%
+  tbl_df() %>%
+  ggplot(aes(year, wage)) +
+  geom_point(alpha = .5) +
+  geom_smooth(method = "lm")
+
+Wage %>%
+  tbl_df() %>%
+  ggplot(aes(education, wage, fill = education)) +
+  geom_boxplot() +
+  theme(legend.position = "none") +
+  labs(x = "")
+```
+
+```{r}
+
+Smarket %>%
+  tbl_df() %>%
+  ggplot(aes(Direction, Today, fill = Direction)) +
+  geom_boxplot() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "Percentage return for today")
+
+Smarket %>%
+  tbl_df() %>%
+  ggplot(aes(Direction, Lag1, fill = Direction)) +
+  geom_boxplot() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "Percentage return for previous day")
+
+Smarket %>%
+  tbl_df() %>%
+  ggplot(aes(Direction, Lag2, fill = Direction)) +
+  geom_boxplot() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "Percentage return for 2 days previous")
+
+```
+
+
+
+
+
+
+
+
+
+

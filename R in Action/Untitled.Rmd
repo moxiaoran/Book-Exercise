@@ -1,0 +1,116 @@
+---
+title: "Untitled"
+author: "Yifei Liu"
+date: "1/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(tidyverse)
+library(tidyr)
+library(ggiraphExtra)
+theme_set(theme_minimal())
+
+x <- rnorm(100, sd = 10, mean = 100)
+mean(x)
+
+mean(scale(x) * 10 + 100)
+
+x <- "abcdefhijk"
+substr(x, start = c(1, 4), stop = c(3, 8))
+
+
+
+
+
+
+```
+
+
+
+
+
+```{r}
+options(digits = 3)
+Student <- c("John Davis", "Angela Williams", "Bullwinkle Moose", "David Jones", "Janice Markhammer", "Cheryl Cushing", "Reuven Ytzrhak", "Greg Knox", "Joel England", "Mary Rayburn")
+Math <- c(502, 600, 412, 358, 495, 512, 410, 625, 573, 522)
+Science <- c(95, 99, 80, 82, 75, 85, 80, 95, 89, 86)
+English <- c(25, 22, 18, 15, 20, 28, 15, 30, 27, 18)
+roster <- data.frame(Student, Math, Science, English, stringsAsFactors=FALSE)
+
+roster_processed <- roster %>% 
+  mutate_if(is.numeric, scale) %>%
+  mutate(score = rowMeans(cbind(Math, Science, English), na.rm = T))
+
+y <- quantile(roster_processed$score, c(.8, .6,.4, .2))
+roster_processed %>%
+  mutate(grade = case_when(
+    score > y[1] ~ "A",
+    score > y[2] ~ "B",
+    score > y[3] ~ "C",
+    score > y[4] ~ "D",
+    TRUE ~ "F"
+  ))
+
+```
+
+
+```{r}
+
+feelings <- c("sad", "afraid")
+
+for (i in feelings) 
+  {print(
+    switch(i,
+          happy = "I am glad you are happly",
+          afraid = "There is nothing to fear",
+          sad = " cheery up",
+          angry = "Calm down now")
+  )}
+
+mystats <- function(x, parametric = T, print = F) {
+  if(parametric) {
+    center <- mean(x); spread <- sd(x)
+  } else {
+    center <- median(x); spread <- mad(x)
+  }
+  if(print & parametric) {
+    cat("Mean = ", center, "\n", "SD = ", spread, "\n")
+  } else if(print & !parametric) {
+    cat("Median = ", center, "\n", "MAD = ", spread, "\n")
+  }
+  result <- list(center = center, spread = spread)
+  return(result)
+}
+
+x <- rnorm(500)
+mystats(x, parametric = T, print = T)
+mystats(x, parametric = F, print = T)
+
+
+mydate <- function(type = "long") {
+  switch(type,
+         long = format(Sys.time(), "%A %B %d %Y"),
+         short = format(Sys.time(), "%m-%d-%y"),
+         cat(type, "is not a recognized type\n"))
+}
+
+mydate("long")
+mydate("median")
+
+
+
+
+```
+
+
+
+
+
+
+

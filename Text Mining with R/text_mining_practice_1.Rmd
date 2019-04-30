@@ -1,0 +1,216 @@
+---
+title: "Text mining practice 1"
+author: "Yifei Liu"
+date: "4/28/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+load required packages
+
+```{r, message=F, warning=F}
+library(tidytext)
+library(janeaustenr)
+library(pdftools)
+library(stringr)
+library(tidyr)
+library(gutenbergr)
+library(pdftools)
+library(tm)
+library(tm.plugin.webmining)
+library(purrr)
+library(methods)
+library(Matrix)
+library(scales)
+library(stringr)
+library(reshape2)
+library(ggraph)
+library(widyr)
+library(wordcloud)
+library(widyr)
+library(igraph)
+library(subtools)
+library(topicmodels)
+library(mallet)
+theme_set(theme_minimal())
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+```
+
+
+I think the best way to learn text analysis, is by doing text analysis.... It may sound really pretty straightforward, but I find a lot of cases like this, which is learning by doing, I fail it. Hope I don't in this time, and anyone read this sentence keep this in mind. *Learning by Doing*
+
+I want tidy two Finance book, one is _The physics of Wall Street - a brief history of predicting the unpredictable_, and another is _Folling some of the people all of the time_. To be honest, I have not read any of them.....
+
+Tidy a pdf document
+
+```{r}
+file <- list.files(path = "/Users/yifeiliu/Documents/R/data/book_exercise/tidytext/", pattern = ".pdf*") %>%
+  paste("/Users/yifeiliu/Documents/R/data/book_exercise/tidytext/",., sep = "")
+
+
+book <- map_df(file, ~ tibble(txt = pdf_text(.x)) %>%
+    mutate(book = str_replace(str_remove(.x, "/Users/yifeiliu/Documents/R/data/book_exercise/tidytext/"), ".pdf", "")) %>%
+      group_by(book) %>%
+      # reference one, how to split paragraph into sentence
+    mutate(sentence = str_split(txt, "(?<=\\.|\\?)\\s(?=[A-Z])"))) %>%
+    unnest(sentence) %>%
+    mutate(linenumber = row_number()) %>%
+    ungroup() %>%
+    select(-txt)
+
+book_df <- book %>%
+  group_by(book) %>%
+  # trail and error to divide chapter, since you already know how many chapter in each book, it should be easy
+  mutate(chapter = cumsum(str_detect(sentence, regex("    chapter [1234567890]", ignore_case = T))),
+         author = case_when(book == "Folling some of the people all of the time" ~ "David Einhorn",
+                            book == "The physics of Wall Street - a brief history of predicting the unpredictable" ~ "James Owen Weatherall",
+                            T ~ "Steven Bird")) %>%
+  ungroup()
+
+finance_book <- book %>%
+  filter(book %in% c("Folling some of the people all of the time", "The physics of Wall Street - a brief history of predicting the unpredictable")) %>%
+  group_by(book) %>%
+  # trail and error to divide chapter, since you already know how many chapter in each book, it should be easy
+  mutate(chapter = cumsum(str_detect(sentence, regex("    chapter [1234567890]", ignore_case = T))),
+         author = case_when(book == "Folling some of the people all of the time" ~ "David Einhorn",
+                            book == "The physics of Wall Street - a brief history of predicting the unpredictable" ~ "James Owen Weatherall")) %>%
+  ungroup()
+
+regex_book <- book %>%
+  filter(book == "Natural Language Processing with Python") %>%
+  mutate(chapter = cumsum(str_detect(sentence, regex("    CHAPTER [1234567890]"))),
+         author = "Steven Bird") %>%
+  ungroup()
+
+book_df <- rbind(regex_book,
+                 finance_book)
+
+```
+
+The reasona I didn't jsut use one pipe to add chapter and rename book, is because I couldn't figure out a way corrected add chapter name. If I use use _str_detect(sentence, regex("    chapter [1234567890]", ignore_case = T)_ then the regex book will have 12 chapter instead of 11. I use lookaround method. [^2]
+
+
+we can take a look at how many chapter each book have. 
+
+```{r}
+book_df %>%
+  group_by(book) %>%
+  summarize(chapters = max(chapter))
+
+```
+
+
+
+let's unnest the sentence use unnest_tokens
+
+```{r}
+tidy_book <- book_df %>%
+  unnest_tokens(word, sentence)
+
+book_df %>%
+  unnest_tokens(output = sentence, input = sentence, token = "sentences")
+
+tidy_book
+
+```
+
+then the data is in on word per row format let's split remove the stop word
+
+```{r}
+tidy_book <- tidy_book %>%
+  anti_join(stop_words)
+
+tidy_book %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  na.omit() %>%
+  group_by(author) %>%
+  count(word, sort = T) %>%
+  top_n(15, wt = n) %>%
+  ungroup() %>%
+  mutate(word = fct_reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = word)) +
+  geom_col(fill = "midnightblue", alpha = 0.8) +
+  coord_flip() +
+  facet_wrap(~ author, scales = "free") +
+  labs(x = "",
+       y = "",
+       title = "Most frequent word in Three book",
+       subtitle = "one in prgramming, two in finance") +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.text.y = element_text(face = "italic"))
+  
+```
+we can see what kind of word is most common in each book. In David book 
+
+check word frequencies
+
+```{r}
+tidy_book %>%
+  count(word, sort = T)
+```
+
+let's use spread and gather to reshape our dataframe so that it is just what we need for plotting and compaing the two sets of book
+
+```{r}
+tidy_freq <- tidy_book %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  na.omit() %>%
+  count(author, word) %>%
+  group_by(author) %>%
+  mutate(proportion = n / sum(n)) %>%
+  select(-n) %>%
+  spread(author, proportion) %>%
+  # by only gathering two book, we can compare the relationship between finance book and programming book
+  gather(author, proportion, `James Owen Weatherall`:`Steven Bird`)
+
+```
+
+After extract the word from each book, let do a plot.
+
+```{r}
+tidy_freq %>%
+  ggplot(aes(proportion, y = `David Einhorn`, color = abs(`David Einhorn` - proportion))) +
+  geom_abline(color = "grey40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = T, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+  facet_wrap(~ author, ncol = 2) +
+  theme(legend.position = "none") +
+  labs(y = "David Einhorn",
+       x = "")
+
+```
+
+let's quantify how similary and difference these sets of word frequencies are using a correlated test. 
+
+```{r}
+cor.test(data = tidy_freq[tidy_freq$author == "James Owen Weatherall",], ~ proportion + `David Einhorn`)
+cor.test(data = tidy_freq[tidy_freq$author == "Steven Bird",], ~ proportion + `David Einhorn`)
+
+
+```
+
+just as we plot, the word freqencies are more correlated between Finance book then between finanance and programming book. 
+
+
+
+
+
+
+Reference: 
+1: [split paragraph into sentences in R](https://stackoverflow.com/questions/35304900/split-paragraph-into-sentences-in-r)
+[^2]: [Lookahead and Lookback zero length Assertions](https://www.regular-expressions.info/lookaround.html)
+
+
+
+
+
+

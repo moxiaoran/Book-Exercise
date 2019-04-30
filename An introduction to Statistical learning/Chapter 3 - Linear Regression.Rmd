@@ -1,0 +1,445 @@
+---
+title: "Chapter 3 - Linear Regression"
+author: "Yifei Liu"
+date: "1/18/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load package
+```{r}
+library(MASS)
+library(ISLR)
+library(tidyverse)
+library(GGally)
+library(broom)
+library(scales)
+library(forecast)
+library(ggcorrplot)
+library(ggfortify)
+library(car)
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+
+theme_set(theme_minimal())
+options(digits = 3)
+
+
+```
+
+
+```{r}
+
+adver <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Advertising.csv")
+
+
+
+
+ggplot(adver, aes(TV, sales)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+
+
+
+model <- lm(sales ~ TV, data = adver)
+
+models <- tibble(
+  a1 = runif(250, 3, 10),
+  a2 = runif(250, -1, 1)
+)
+
+tv_sales <- adver[, c("TV", "sales")]
+
+ggplot(adver, aes(TV, sales)) +
+  geom_point() +
+  geom_abline(aes(intercept = a1, slope = a2), data = models,
+              alpha = 1/4)
+
+model1 <- function(a, data) {
+  a[1] + a[2] * data$TV
+}
+
+model1(c(7, 0.05), tv_sales)
+
+measure_difference <- function(mod, data) {
+  diff <- data$sales - model1(mod, data)
+  sqrt(mean(diff ^ 2))
+}
+
+measure_difference(c(7.032594, 0.047537), tv_sales)
+
+
+summary(lm(sales ~ radio, data = adver))
+
+
+model1 <- function(a, data) {
+  a[1] + a[2] * data$TV + a[3] * data$radio + a[4] * data$newspaper
+}
+
+measure_difference <- function(mod, data) {
+  diff <- data$sales - model1(mod, data)
+  sqrt(mean(diff ^ 2))
+}
+
+measure_difference(c(2.9, 0.05, 0.19, -0.001), adver)
+
+model <- lm(sales ~ . - X1, data = adver)
+
+tidy(model)
+
+cor(adver[, 2:5])
+
+
+
+
+```
+## 3.3 Other considerations in regression model
+
+```{r}
+credit <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Credit.csv")
+
+credit
+
+lm(sales ~ TV + radio + TV*radio, data = adver) %>%
+  tidy()
+
+credit <- credit %>%
+  mutate_if(is.character, funs(as.factor))
+
+lm(Balance ~ Rating + Limit + Ethnicity, data = credit) %>%
+  tidy()
+
+```
+
+### Non-linear Relationships
+
+```{r}
+auto <- read.table("http://www-bcf.usc.edu/~gareth/ISL/Auto.data",header = T)
+
+auto <- auto %>%
+  mutate(horsepower = as.numeric(horsepower))
+
+model <- lm(mpg ~ horsepower + I(horsepower^2) , data = auto)
+
+
+
+lm(mpg ~ horsepower + I(horsepower^2) , data = auto) %>%
+  ggplot(aes(.fitted, .resid)) +
+  geom_point()
+
+auto %>%
+  lm(mpg ~ horsepower, data = .) %>%
+  augment() %>%
+  ggplot(aes(.fitted, .resid)) +
+  geom_point()
+
+
+
+auto %>%
+  mutate(predict = predict(model))  %>%
+  ggplot() +
+  geom_point(aes(horsepower, mpg)) +
+  geom_line(aes(horsepower, predict), color = "red")
+
+
+
+```
+
+## 3.3 Potential problems 
+
+1. Non-linarity of the response predictor relationships
+
+There may be a non linear trend in residual 
+
+```{r}
+linear_mod_1 <- lm(mpg ~ horsepower, data = auto)
+
+linear_mod_1 %>%
+  augment() %>%
+  ggplot(aes(.fitted, .resid)) +
+  geom_point() +
+  geom_smooth()
+
+linear_mod_2 <- lm(mpg ~ horsepower + I(horsepower ^ 2) + I(horsepower ^ 3), data = auto)
+
+summary(linear_mod_2)
+
+linear_mod_2 %>%
+  augment() %>%
+  ggplot(aes(.fitted, .resid)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+
+
+
+```
+
+
+2. Correlation of Error terms
+
+```{r}
+error_1 <- linear_mod_1$residuals
+ggAcf(error_1)
+
+linear_mod_2$residuals %>%
+  ggAcf()
+
+
+```
+
+3. Non-constant variance of Error Terms
+
+4. outliers
+
+```{r}
+
+ggplot(aes(Limit, Age), data = credit) +
+  geom_point()
+
+ggpairs(credit[, c("Limit", "Age", "Rating")])
+
+models <- lm(Limit ~ Age + Rating, data = credit)
+
+autoplot(models, which = 1:6, ncol = 3)
+
+
+```
+
+5. Collinearity
+
+```{r}
+auto %>%
+  select(-name) %>%
+  cor()
+
+
+
+
+```
+
+6. Collinearity
+
+
+```{r}
+
+model <- lm(Balance ~ Limit + Rating, data = credit)
+model
+tidy(model)
+
+model1 <- lm(Balance ~ Age + Limit, data = credit)
+tidy(model1)
+
+tidy(model) %>%
+  mutate(model = "model1") %>%
+  rbind(tidy(model1) %>% mutate(model = "model2"))
+
+credit %>%
+  select_if(is.numeric) %>%
+  select(-X1) %>%
+  cor() %>%
+  ggcorrplot(hc.order = TRUE, type = "lower",
+     outline.col = "white", lab = T, show.legend = F)
+
+
+```
+
+we can use cov matrix to detected simple collinearity. But we cannot detected multicollinearity. We need to use method called VIF
+
+```{r}
+credit %>%
+  select_if(is.numeric) %>%
+  select(-X1) %>%
+  lm(Balance ~., data = .) %>%
+  car::vif()
+
+
+
+```
+we can see in this case. There is considerable collinearity in this data. Rating and limit. 
+
+
+## 3.4 The Marketing Plan
+
+```{r}
+adver %>%
+  select(-X1, - sales) %>%
+  cor() %>%
+  ggcorrplot(type = "lower",
+             show.legend = F, outline.col = "white",
+             lab = T)
+
+adver %>%
+  select(-X1) %>%
+  lm(sales ~., data = .) %>%
+  car::vif()
+
+```
+
+## 3.5 Comparison of Linear Regression with K-Nearest neighbors
+
+## 3.6 Lab: Linear Regression
+
+
+
+```{r}
+data("Boston")
+lm_model <- lm(medv ~ lstat, data = Boston)
+
+summary(lm_model)
+autoplot(lm_model, which = 1:6)
+
+names(lm_model)
+
+confint(lm_model)
+
+predict(lm_model, data.frame(lstat = 1:10),
+        interval = "confidence")
+
+# tidy way
+Boston %>%
+  lm(medv ~ lstat, data = .) %>%
+  augment(newdata = data.frame(lstat = 1:10), type.predict = "response")
+
+
+Boston %>%
+  cor() %>%
+  ggcorrplot(type = "lower", show.legend = F,
+             lab = T)
+
+
+
+
+```
+
+## 3.6.3 Multiple Linear regression
+
+```{r}
+lm_fit <- lm(medv ~ lstat + age, data = Boston)
+summary(lm_fit)
+
+lm_fit <- lm(medv ~ ., data = Boston)
+summary(lm_fit)
+
+summary(lm_fit)$r.sq
+summary(lm_fit)$sigma
+vif(lm_fit)
+
+lm_fit <- update(lm_fit, ~. - age)
+
+summary(lm_fit)
+
+summary(lm_fit)$coefficients
+
+```
+
+## 3.6.4 Interaction Terms
+
+```{r}
+summary(lm(medv ~ lstat*age, data = Boston))
+
+```
+
+### 3.6.5 Non-linear transformations of the predicators
+
+```{r}
+
+lm_fit_1 <- lm(medv ~ lstat, data = Boston)
+lm_fit_2 <- lm(medv ~ lstat + I(lstat ^ 2), data = Boston)
+summary(lm_fit_1)
+summary(lm_fit_2)
+
+anova(lm_fit_1, lm_fit_2)
+
+
+autoplot(lm_fit_2)
+
+summary(lm(medv ~ poly(lstat, 5), data = Boston))
+
+```
+## 3.6.6 Qualitative Predictors
+
+```{r}
+Carseats
+
+lm_fit <- lm(Sales ~.+Income:Advertising + Price:Age, data = Carseats)
+summary(lm_fit)
+
+
+```
+
+
+
+
+
+
+
+### Extra: Log transfer
+
+
+```{r}
+p <- ggplot(cars, aes(x = speed, y = dist)) +
+  geom_point()
+
+ggpairs(cars[, c("speed", "dist")])
+
+
+```
+
+#### set axis into log2 log10 scales
+
+```{r}
+p + scale_x_continuous(trans = 'log2') +
+  scale_y_continuous(trans = 'log2')
+
+p + scale_x_log10() +
+  scale_y_log10()
+
+p + scale_y_continuous(trans = log2_trans(),
+                       breaks = trans_breaks("log2", function(x) 2^x),
+                       labels = trans_format("log2", math_format(2^.x)))
+
+```
+
+```{r}
+p
+
+p + scale_x_log10() 
+p + scale_y_continuous(trans = "log10")
+
+```
+
+#### Display log scale ticks mark
+
+```{r}
+
+p2 <- ggplot(Animals, aes(body, brain)) +
+  geom_point() +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x))) +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)))
+
+p2
+
+p2 + annotation_logticks()
+
+
+p2 + annotation_logticks(sides = "lb")
+
+```
+
+
+
+
+
+
+
+
+
+

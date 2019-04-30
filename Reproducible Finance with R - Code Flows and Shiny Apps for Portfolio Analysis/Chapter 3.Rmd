@@ -1,0 +1,115 @@
+---
+title: "Chapter 3: Building a Portfolio"
+author: "Yifei Liu"
+date: "3/19/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse) 
+library(lubridate) 
+library(readxl) 
+library(highcharter) 
+library(tidyquant)
+library(timetk) 
+library(tibbletime) 
+library(quantmod) 
+library(PerformanceAnalytics) 
+library(PortfolioAnalytics)
+library(scales)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+theme_set(theme_tq())
+
+```
+
+```{r}
+symbols <- c("SPY","EFA", "IJS", "EEM","AGG")
+
+w <- c(rep(c(0.25, 0.2), each = 2), 0.1)
+
+weight <- tibble(symbols, w)
+
+prices <- tq_get(symbols,
+                 get = "stock.prices",
+                 from = "2012-12-31",
+                 to = "2018-12-31") 
+
+return_monthly <- prices %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "monthly",
+               col_rename = "Ra") %>%
+  filter(date != "2012-12-31")
+
+portfolio_return <- return_monthly %>%
+  inner_join(weight, by = c(symbol = "symbols")) %>%
+  ungroup() %>%
+  group_by(date) %>%
+  summarize(return = sum(Ra * w))
+```
+
+
+
+### 3.3 Portfolio Returns in the tidyquant world
+
+```{r}
+return_monthly %>%
+  tq_portfolio(assets_col = symbol,
+               returns_col = Ra,
+               weights = w,
+               col_rename = "Ra",
+               rebalance_on = "months")
+
+
+```
+
+
+## 3.5 Visualizing Portfolio Returns in the tidyverse 
+
+```{r}
+# scatter plot
+
+portfolio_return %>%
+  ggplot(aes(date, return)) +
+  geom_point(color = "midnightblue") +
+  labs(x = "", y = "Monthly Return", title = "Portfolio Returns Scatter") +
+  scale_y_continuous(labels = percent_format()) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# histogram 
+
+portfolio_return %>%
+  ggplot(aes(return)) +
+  geom_histogram(fill = "cornflowerblue", color = "cornflowerblue") +
+  labs(x = "", y = "Count", title = "Portfolio Returns Scatter") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# histogram with individual stock performance
+
+return_monthly %>%
+  ggplot(aes(x = Ra, fill = symbol)) +
+  geom_histogram(alpha = 0.15, binwidth = 0.01) +
+  geom_histogram(data = portfolio_return, aes(x = return), fill = "midnightblue",
+                 binwidth = 0.01) +
+  labs(title = "Portfolio and Asset Monthly Returns") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+
+### Shiny App portfolio Returns
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,39 @@
+---
+title: "Untitled"
+author: "Yifei Liu"
+date: "1/2/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+| id | age | sex |
+|:----|----:|:---:|
+| a | 49 | M |
+| b | 32 | F |
+
+```{r}
+library(tidyverse)
+library(latex2exp)
+library(knitr)
+theme_set(theme_minimal())
+
+x <- data_frame(x = seq(1:100),
+                y = cumsum(rnorm(100)))
+
+
+x
+
+x %>%
+  ggplot(aes(x, y)) +
+  geom_line() +
+  labs(y = TeX("$x_{i+1}=x_i+\\epsilon_{i+1}$"),
+       x = "Step")
+
+kable(head(mtcars[, 1:6]))
+  
+```

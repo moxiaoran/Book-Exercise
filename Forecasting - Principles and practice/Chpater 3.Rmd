@@ -1,0 +1,808 @@
+---
+title: "Chapter 3 - The foecaster’s Toolbox"
+author: "Yifei Liu"
+date: "1/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(forecast)
+library(fpp2)
+library(tidyverse)
+library(tseries)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+library(scales)
+library(GGally)
+library(e1071)
+library(fpp2)
+theme_set(theme_minimal())
+
+```
+
+3.1 Some simple forecasting methods
+
+Average method
+
+$$\hat{y}_{T+h|T} = (y_{1} + \dots + y_{T})/T$$
+
+Naive method
+
+$$\hat{y}_{T+h|T} = y_{t}$$
+
+Seasonal Naive method
+
+$$\hat{y}_{T+h|T} = y_{T+h-m(k+1)}$$
+
+For example, with monthly data, the forecast for all future February values is equal to the last observed February value.
+
+Drifted method
+
+$$\hat{y}_{T+h|T} = y_T + \frac{h}{T-1}\sum_{t=2}^T(y_t-y_{t-1}) = y_T +h \frac{y_T - y_1}{T-1}$$
+This is equivalent to drawing a line between the first and last observations, and extrapolating it into the future.
+
+```{r}
+
+x <- ts(1:20, start = 1990, frequency = 4)
+
+autoplot(x)
+autoplot(naive(x, 5))
+autoplot(rwf(x, 4))
+
+autoplot(snaive(x, 4))
+
+
+beer2 <- window(ausbeer, start = 1992, end = c(2007, 4))
+
+autoplot(beer2) +
+  autolayer(meanf(beer2, h = 11),
+            series = "Mean", PI = F)+
+  autolayer(naive(beer2, h = 11),
+            series = "Naive", PI = F) +
+  autolayer(snaive(beer2, h = 11),
+            series = "Seasonal Naive", PI = F) +
+  autolayer(rwf(beer2, h = 11, drift = T),
+            series = "Naive with Drift", PI = F) +
+  labs(x = "Year", y = "Megalitres",
+       title = "Foecasts for quarterly beer production")
+
+
+
+
+```
+
+These simple method will be consider as benchmarks. all new methods will be compare to these mmethod, to see whether method are better or not. 
+
+
+
+3.2 Transformation and adjustments
+3.2 Some simple forecast methods
+
+Calender adjustments
+
+```{r}
+autoplot(milk)
+
+dframe <- cbind(monthly = milk,
+                DailyAverage = milk / monthdays(milk))
+
+autoplot(dframe, facet = T) +
+  labs(x = "year", y = "Pounds",
+       title = "Milk production per cow")
+
+
+```
+
+Population adjustments
+
+Inflation Adjustments
+
+
+
+Mathematical Transformations
+
+log transformations, power transformations, Box Cox transformations
+
+```{r}
+lambda <- BoxCox.lambda(elec)
+lambda
+
+autoplot(BoxCox(elec,lambda))
+
+kpss.test(elec)
+
+dframe <- cbind(month = elec,
+                DailyAverage = elec / monthdays(elec))
+
+autoplot(dframe, facets = T) +
+  labs(x = "year")
+
+```
+
+Bias adjustments
+
+```{r}
+fc <- rwf(eggs, drift = T, lambda = 0, h = 50, level = 80)
+fc2 <- rwf(eggs, drift = T, lambda = 0, h = 50, level = 80, biasadj = T)
+
+autoplot(eggs) +
+  autolayer(fc, series = "Simple back transformation") +
+  autolayer(fc2, series = "Bias adjusted", PI = F) +
+  guides(color = guide_legend(title = "Forecast"))
+
+
+
+
+```
+
+## 3.3 Residual Diagnostics
+
+Check residual normality like linear regression does
+1. residual uncorrelated
+2. Residuals has a zero mean
+3. Residuals have constant variance
+4. The residuals are normally distributed. 
+
+
+Example: Forecasting the Google dialy Closing stock price. 
+
+$$e_{t} = y_t - \hat{y_t} = y_t - y_{t-1}$$
+
+```{r}
+autoplot(goog200) +
+  labs(x = "Day", y = "Close Price (US$)",
+       title = "Google Stock (daily ending 6 December 2013)")
+
+
+```
+
+we can chekc the residual obtain from forecasting this series using the naive method
+
+
+
+
+```{r}
+
+# plot the naive forecasting
+
+goog_naive <- naive(goog200, 100)
+
+autoplot(goog200) +
+  autolayer(goog_naive, se = F, series = "Naive") +
+  labs(x = "Day", y = "Close Price (US$)",
+       title = "Google Stock (daily ending 6 December 2013)")
+```
+
+plot the residuals
+
+```{r}
+
+res <- residuals(goog_naive)
+
+t.test(res)
+
+
+autoplot(res) +
+  labs(x = "Day", y = "",
+       title = "Residuals from naive method")
+
+gghistogram(res) +
+  labs(title = "Histogram of residuals") +
+  stat_function(fun = dnorm,
+                color = "red",
+                args = list(mean = mean(res, na.rm = T),
+                            sd = sd(res, na.rm = T)))
+
+
+ggAcf(res) +
+  labs(title = "ACF of residuals")
+
+```
+
+These graphs show that the naive method produces forecasts that appear to account for  all avaiable info. The mean of the residuals is calose to zero, *in t test result*. There is no correlation in the residual series, in acf test no value exceed $$\pm2/\sqrt{n}$$, n is the length of the Time Series. The times plot of the residuals show that the variation of teh residuals stay much the same across the historical data, aprat from the outlier, and therefore residual can be treated as constant. 
+
+Consequently, forecasts from naive method is a good fit, but the prediction interval that are computed assuming a normal distributuon may be inaccurate. 
+
+
+### Portmanteau tests for autocorrelation
+
+```{r}
+# lag = h and fitdf = K
+
+Box.test(res, lag = 10, fitdf = 0)
+
+Box.test(res, lag = 10, fitdf = 0, type = "Lj")
+
+
+```
+Since both Q and $Q^*$, the result are no significatnt. Thus, we can clude that the residuals are not distriguishable from a white noise sieres. 
+
+
+All those methods for checking residuals are conveniently in R function checkresiduals()
+
+```{r}
+checkresiduals(naive(goog200))
+```
+
+## 3.4 Evaluating forecast accuracy 
+
+### Training and test sets
+
+```{r}
+
+start(ausbeer)
+end(ausbeer)
+
+
+window(ausbeer, start = 1995)
+
+window(ausbeer, start = length(ausbeer) - 4*5)
+
+tail(ausbeer, 4*5)
+
+```
+
+### Forecast errors
+
+Forecast error is the difference between an observation and its foecast
+
+$$e_{T+h} = y_{T+h} - \hat{y}_{T+h|T}$$
+forecast error different from residuals in two ways
+
+1. Residuals are calcuated on the training set while forecast errors are calcuated on the test set. 
+2. Residuals are based on on-step forecast while forecast eoors can involve multi-step forecasts. 
+
+we can measure forecast accuracy by summarising the forecast erro in different ways. 
+
+### Scale-dependent erros
+
+Mean absolute error: MAE = mean$|e_t|$
+Root mean squared error: RMSE = $\sqrt{mean(e_t^2)}$
+
+When comparing forecast methods applied to a single time series, or to serveral time series with the same units, the MAE is popular as it it easy to both understand and compute. A forecast method that minise the MAE will lead to forecasts of the median, while minimising the RMSE will lead to forecast of the mean. Consequently, the RMSE is also widely used, depsite being more difficult to interpret. 
+
+
+### Percentage errors
+
+$p_t = 100e_t/y_t$, mean unit-free
+
+Mean absolute percentage error: MAPE = mean($|p_t|$)
+Potential drawdown, being infinite or undefined if $y_t = 0$ for any t in the period of interest. 
+
+### Scaled errors
+
+Scaled errors as an alternative to using percentage errors when comparing forecast accuracy across series with different units. 
+
+
+### Examples
+
+Seaonal dataset
+
+```{r}
+
+beer2 <- window(ausbeer,start=1992,end=c(2007,4))
+
+beerfit1 <- meanf(beer2,h=10)
+beerfit2 <- rwf(beer2,h=10)
+beerfit3 <- snaive(beer2,h=10)
+
+autoplot(window(ausbeer, start=1992)) +
+  autolayer(beerfit1, series="Mean", PI=FALSE) +
+  autolayer(beerfit2, series="Naïve", PI=FALSE) +
+  autolayer(beerfit3, series="Seasonal naïve", PI=FALSE) +
+  labs(x = "year", y = "Megalitres", title = "Forecasts for quarterly beer production")
+
+
+beer3 <- window(ausbeer, start = 2008)
+
+accuracy(beerfit1, beer3)
+accuracy(beerfit2, beer3)
+accuracy(beerfit3, beer3)
+
+
+
+```
+Base on the accuracy result, we can see the thir mothod, Seaonal naive method is the most accuracy. 
+
+
+non-seasonal dataset
+
+```{r}
+# three different method
+
+googfc1 <- meanf(goog200, h = 40)
+googfc2 <- rwf(goog200, h = 40)
+googfc3 <- rwf(goog200, h = 40, drift = T)
+
+
+autoplot(subset(goog, end = 240)) +
+  autolayer(googfc1, PI = F, series = "Mean") +
+  autolayer(googfc2, PI = F, series = "Naive") +
+  autolayer(googfc3, PI = F, series = "Drift") +
+  labs(x = "day", y = "Close price (US$)",
+       title = "Google Stock price forecast") 
+```
+
+Find accuracy
+
+```{r}
+googtest <- window(goog, start = 201, end = 240)
+
+accuracy(googfc1, googtest)
+accuracy(googfc2, googtest)
+accuracy(googfc3, googtest)
+```
+The best method, which have the lowest value in all summarize error term method, is drift method. 
+
+### Time series cross validation
+
+```{r}
+e <- tsCV(goog200, rwf, drift = T, h = 1)
+
+# RMSE: Root mean squared error
+sqrt(mean(e^2, na.rm = T))
+
+sqrt(mean(residuals(rwf(goog200, drift = 1))^2, na.rm = T))
+
+
+```
+The RMSE from the residuals is smaller, as the corrsponding "forecast" are based on a model fitted to the entire data set, rather than being true forecasts. 
+
+A good way to choose the best forecasting model is to find the model with smallest RMSE computed using time series cross-validation. 
+
+
+### Pipe operator
+
+```{r}
+error <- goog200 %>%
+  tsCV(forecastfunction = rwf, drift = T, h = 1)
+
+error^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+error <- goog200 %>%
+  rwf(drift = T) %>%
+  residuals()
+
+error^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+
+
+
+
+```
+
+### Example: using tsCV()
+
+```{r}
+error <- tsCV(goog200, forecastfunction = naive, h = 8)
+
+# compute the MSE value and remove missing values
+
+mse <- colMeans(error^2, na.rm = T)
+
+data.frame(h = 1:8, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) +
+  geom_point()
+
+# rmse
+
+e <- tsCV(goog200, rwf, drift = T, h = 8)
+
+rmse <- sqrt(colMeans(error^2, na.rm = T))
+rmse
+
+data.frame(h = 1:8, RESE = rmse) %>%
+  ggplot(aes(x = h, y = RESE)) +
+  geom_point()
+
+
+
+```
+
+## 3.5 Predication intervals
+
+$\hat{y}_{T+h|T}\pm{c}\hat{\sigma}_h$
+
+
+
+### One step prediction intervals
+
+
+```{r}
+# naive method residuals
+
+residuals <- residuals(naive(goog200))
+
+sd(residuals, na.rm = T)
+
+
+```
+
+### Multiple Predication intervals
+
+Common feature of predication intervals is that they increase in length as the forecast horizon increases. The future ahead we forecast, the more uncertainity is associated with the forecast, and thus the wider the predication intervals. 
+
+### Benchmark methods
+
+Four benchmark methods
+
+1. Mean forecasts: $\hat{\sigma}_h = \hat{\sigma}\sqrt{1+1/T}$
+2. Naive forecast: $\hat{\sigma}_h = \hat{\sigma}\sqrt{h}$
+3. Seasonal Naive forecast $\hat{\sigma}_h = \hat{\sigma}\sqrt{k + 1}$ where k is the integer part of $(h-1)/m$
+4. Drift forecasts: $\hat{\sigma}_h = \hat{\sigma}\sqrt{h(1+h/T)}$
+
+Note that when *h = 1* and T is large, means you need to only predict one value and you have large dataset like 200, these all give the same approximate value $\hat{\sigma}$
+
+
+```{r}
+naive(goog200, h = 10)
+
+goog200[200] + sd(residuals(naive(goog200)), na.rm = T) * qnorm(0.1, lower.tail = F)
+
+```
+
+```{r}
+autoplot(naive(goog200))
+
+```
+### Predication intervals from bootstrpped residuals
+
+When a _normal distribution for the forecast errors is an unreasonable assumption_, one alternative is to use *bootstrapping*, which only assumes that the forecast errors are *uncorrelated*
+
+*Forecast error*: $e_t = y_t - \hat{y}_{t|t-1}$ which can re-rwite this as $y_t = \hat{y}_{t|t-1} + e_t$
+
+==================Review
+
+
+```{r}
+naive(goog200, bootstrap = T)
+
+```
+
+In this case, they are similary (but not identical) to the predication intervals based on teh normal distribution. 
+
+### Predication intervals with transformations
+
+If a transfromation has been used, then the predication interval should be computed on the transformed scale, and the end points back-transformation to give a predication interval on teh original scale. 
+
+
+## 3.6 The forecast pacakge in R
+
+```{r}
+forecast(ausbeer, h = 4)
+
+
+```
+
+## 3.7 Exercises
+
+1. 
+
+```{r}
+# US net electricity generation
+
+autoplot(usnetelec)
+
+lambda <- BoxCox.lambda(usnetelec)
+autoplot(BoxCox(usnetelec, lambda))
+
+kpss.test(BoxCox(usnetelec, lambda))
+
+# Quarterly US GDP
+
+autoplot(usgdp)
+
+lambda <- BoxCox.lambda(usgdp)
+autoplot(BoxCox(usgdp, lambda))
+
+kpss.test(BoxCox(usgdp, lambda))
+
+# monthly copper prices
+
+autoplot(mcopper)
+
+lambda <- BoxCox.lambda(mcopper)
+autoplot(BoxCox(mcopper, lambda))
+
+kpss.test(BoxCox(mcopper, lambda))
+
+# monthly US domestic enplanements
+
+autoplot(enplanements)
+
+lambda <- BoxCox.lambda(enplanements)
+autoplot(BoxCox(enplanements, lambda))
+
+```
+
+
+2. 
+
+```{r}
+autoplot(cangas)
+
+lambda <- BoxCox.lambda(cangas)
+autoplot(BoxCox(cangas, lambda))
+
+kpss.test(BoxCox(cangas, lambda))
+
+checkresiduals(naive(cangas))
+
+```
+
+Because the variance is not simple increase or decrease with series, it jump during 70-90 and decrease afterward. 
+
+
+3. 
+
+```{r}
+
+retail_data <- readxl::read_excel("/Users/yifeiliu/Documents/R/data/book_exercise/forecasting/retail.xlsx", skip = 1)
+
+myts <- ts(retail_data[, "A3349873A"],
+           frequency = 12, start = c(1982, 4))
+
+autoplot(myts)
+
+lambda <- BoxCox.lambda(myts)
+autoplot(BoxCox(myts, lambda))
+
+kpss.test(BoxCox(myts, lambda))
+
+
+```
+
+
+4. 
+
+```{r}
+
+# unemployment benefits in Australia
+autoplot(dole)
+
+dole_cal <- dole / monthdays(dole)
+autoplot(dole_cal)
+
+# transformation adjust for calender, population, inflation seems appropriate
+
+
+# monthly accident deaths in USA
+autoplot(usdeaths)
+
+usdeaths_cal <- cbind(usdeath = usdeaths,
+                       calender = usdeaths / monthdays(usdeaths))
+
+
+autoplot(usdeaths_cal, facets = T)
+
+# calender transformation seem reasonable, if we have further dataset such as ppulation. maybe population tranform is also reasonable
+
+# quarterly clay brick production
+
+autoplot(bricksq)
+
+lambda <- BoxCox.lambda(bricksq)
+
+autoplot(BoxCox(bricksq, lambda))
+
+# all the transfromation and adjustment I know don't seem appropriate to apply on this dataset. 
+
+```
+
+5. 
+
+```{r}
+beer <- window(ausbeer, start = 1992)
+
+fc <- snaive(beer)
+
+autoplot(fc)
+
+res <- residuals(fc)
+
+autoplot(res)
+
+checkresiduals(res)
+
+t.test(res)
+
+
+
+```
+To test if the residuals are white noise we can do Portmanteau test for autocorrelation
+
+```{r}
+
+# lag = h, h = 2*m, m = 4. fitdf = k, k = parameters in the model, model is snave, so k = 1
+
+Box.test(res, lag = 2*4, fitdf = 1, type = "Lj")
+```
+The p value is relative large, which mean the result are signiciant, so we cannot conclude that the residuals are distringuishable from a white noise series. 
+
+6. 
+
+```{r}
+# WWWusage internet usage per minute
+
+autoplot(WWWusage)
+
+usage_mean <- rwf(WWWusage)
+mean_res <- residuals(usage_mean)
+
+checkresiduals(mean_res)
+
+usage_snaive <- snaive(WWWusage)
+snaive_res <- residuals(usage_mean)
+
+checkresiduals(snaive_res)
+
+usage_naive <- naive(WWWusage)
+naive_res <- residuals(usage_naive)
+
+checkresiduals(usage_naive)
+
+# both naive or snaive is not approporate
+
+
+# bricksq
+
+autoplot(bricksq)
+
+
+bricksq_naive <- naive(bricksq)
+naive_res <- residuals(bricksq_naive)
+
+checkresiduals(naive_res)
+
+bricksq_snaive <- snaive(bricksq)
+snaive_res <- residuals(bricksq_snaive)
+
+checkresiduals(snaive_res)
+
+# both are not appropriated
+
+
+```
+
+
+7. 
+
+a. Yes
+b. not really
+c. MAPE: mean absolute percentage error. is unit free. disadvantage, $y_t$ cannot equal to 0. assume the unit of measurement has a meaningful zero which in some case not correct such as temperature forecasts. also put more pentalty on negative zero. MAPE not a best forecast accuracy method.
+d. Not really, you should start with simple one, such as naive, snave, rwf with drift, and use those methods as benchmark to evaluate future model. 
+e. No. you need to use the model to test on out-of-sample dataset to see its accuracy level. Because fit on test set is not forecast, it's just fit the dataset. 
+
+
+8. 
+
+```{r}
+myts.train <- window(myts, end=c(2010,12))
+myts.test <- window(myts, start=2011)
+
+
+autoplot(myts) +
+  autolayer(myts.train, series="Training") +
+  autolayer(myts.test, series="Test")
+
+fc <- snaive(myts.train)
+
+accuracy(fc,myts.test)
+
+checkresiduals(fc)
+
+kurtosis(residuals(fc), na.rm = T)
+
+# we can see the residuals apprea to be autocorrelated and distribution also have excess kurtosis. 
+
+# use cross validation to test accuracy
+
+e <- tsCV(myts, snaive, h = 4)
+
+sqrt(mean(e^2, na.rm = T))
+
+resids <- myts %>%
+  snaive() %>%
+  residuals()
+
+resids^2 %>%
+  mean(na.rm = T) %>%
+  sqrt()
+
+# test sensitive to acuracy measurement
+
+percent(length(myts.test) / length(myts))
+
+
+
+```
+test sensitive to acuracy measurement, we can see the tes data set we only use  `r percent(length(myts.test) / length(myts))` of original dataset. Convention of train/test should be .8/.2. So we can these how snaive model perform in these split case
+
+```{r}
+myts.train <- window(myts, end = c(2007, 6))
+myts.test <- window(myts, start = c(2007, 7))
+
+autoplot(myts) +
+  autolayer(myts.train, series="Training") +
+  autolayer(myts.test, series="Test")
+
+fc <- snaive(myts.train)
+
+accuracy(fc,myts.test)
+
+checkresiduals(fc)
+
+kurtosis(residuals(fc), na.rm = T)
+
+
+```
+
+20/80 split produce accuracy result better than 10/90 split
+
+
+9. 
+
+```{r}
+# quarterly visitor nights for various region of australia
+
+autoplot(visnights)
+
+```
+
+
+```{r}
+qldmetro <- (visnights[, "QLDMetro"])
+   
+qldmetro_tr1 <- window(qldmetro, end = c(2015, 4))
+qldmetro_tr2 <- window(qldmetro, end = c(2014, 4))
+qldmetro_tr3 <- window(qldmetro, end = c(2013, 4)) 
+
+fc1 <- snaive(qldmetro_tr1)
+fc2 <- snaive(qldmetro_tr2)
+fc3 <- snaive(qldmetro_tr3)
+
+accuracy(fc1, qldmetro)
+accuracy(fc2, qldmetro)
+accuracy(fc3, qldmetro)
+
+
+
+
+
+```
+
+we can see the result from training dataset 2 produce the lowest MAPE score.  
+
+10. 
+
+```{r}
+
+autoplot(dowjones)
+
+autoplot(rwf(dowjones, drift = T))
+
+# this forecast are identical to extending the line drawn between the first and last observation
+
+autoplot(rwf(dowjones, drift = T))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+

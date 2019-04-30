@@ -1,0 +1,116 @@
+---
+title: "Chapter 3"
+author: "Yifei Liu"
+date: "1/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(tidyquant)
+library(tidyverse)
+library(timetk)
+library(tibbletime)
+library(broom)
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+
+```
+
+## Calcualte Beta
+
+
+```{r}
+symbols <- c("SPY","EFA", "IJS","EEM", "AGG")
+
+
+prices <- tq_get(symbols, get = "stock.price",
+                 from = "2013-01-01",
+                 to = "2018-12-31") 
+
+returns <- prices %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "monthly",
+               type = "log",
+               col_rename = "Ra")
+
+w <- c(0.25, 0.25, 0.2, 0.2, 0.1)
+
+
+portfolio_rebalance_montly <- returns %>%
+  tq_portfolio(assets_col = symbol,
+               returns_col = Ra,
+               weights = w,
+               geometric = TRUE,
+               rebalance_on = "months",
+               col_rename = "Ra")
+
+portfolio_rebalance_montly
+
+```
+
+Let's choice a asset as a proxy for the market return. we can choice SPY ETF
+
+```{r}
+spy_month_price <- tq_get("SPY",
+                          from = "2013-01-01",
+                          to = "2018-12-31")
+
+spy_month_return <- spy_month_price %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "monthly",
+               type = "log",
+               col_rename = "Ra")
+
+
+```
+
+combine market return with portfolio return
+
+```{r}
+portfolio_market_return <- portfolio_rebalance_montly %>%
+  inner_join(spy_month_return, by = "date")
+
+cov(portfolio_rebalance_montly$Ra[1:30], spy_month_return$Ra[1:30]) / var(spy_month_return$Ra[1:30])
+
+for(i in pretty(1:length(portfolio_rebalance_montly$Ra), n = 10)) {
+  print(cov(portfolio_rebalance_montly$Ra[1:i], spy_month_return$Ra[1:i]) / var(spy_month_return$Ra[1:i]))
+}
+
+```
+
+```{r}
+beta_asseets <- returns %>%
+  nest(- symbol)
+
+beta_asseets <- beta_asseets %>%
+  mutate(model = map(data, ~lm(Ra ~ spy_month_return$Ra, data = .)))
+
+beta_asseets
+
+beta_asseets$model
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

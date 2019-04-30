@@ -1,0 +1,81 @@
+---
+title: "Part I"
+author: "Yifei Liu"
+date: "12/12/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(plyr)
+library(dplyr) 
+library(tidyr) 
+library(Lahman)
+library(stats4)
+```
+
+We need to get player id and there score average
+```{r}
+career <- Batting %>% 
+  filter(AB > 0) %>%
+  anti_join(Pitching, by = "playerID") %>%
+  group_by(playerID) %>%
+  summarize(H = sum(H),
+            AB = sum(AB)) %>%
+  mutate(average = H / AB)
+
+career <- Master %>%
+  tbl_df() %>%
+  select(playerID, nameFirst, nameLast) %>%
+  unite(name, nameFirst, nameLast, sep = " ") %>%
+  inner_join(career, by = "playerID") %>%
+  select(-playerID)
+
+career
+```
+
+we can look at which is the best batters in history
+
+```{r}
+career %>% 
+  arrange(desc(average))
+
+career %>%
+  arrange(average)
+
+```
+
+We can see there maybe some problems with this method. 
+
+### Estimate a prior from all your data
+
+```{r}
+career_filtered <- career %>%
+  filter(AB > 500)
+
+# log-likehood function
+ll <- function(alpha, beta) {
+  x <- career_filtered$H
+  total <- career_filtered$AB
+  -sum(VGAM::dbetabinom.ab(x, total, alpha, beta, log = T))
+}
+
+# maxium likelihood estimation
+m <- mle(ll, start = list(alpha = 1, beta = 10), method = "L-BFGS-B", lower = c(0.0001, .1))
+
+ab <- coef(m)
+alpha0 <- ab[1]
+beta0 <- ab[2]
+```
+
+
+
+
+
+
+
+
+

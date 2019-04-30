@@ -1,0 +1,40 @@
+---
+title: "Chapter 5"
+author: "Yifei Liu"
+date: "3/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(tidytext)
+library(janeaustenr)
+library(pdftools)
+library(stringr)
+library(tidyr)
+library(gutenbergr)
+library(pdftools)
+library(tm)
+library(tm.plugin.webmining)
+library(purrr)
+library(methods)
+library(Matrix)
+library(scales)
+library(stringr)
+library(reshape2)
+library(ggraph)
+library(widyr)
+library(wordcloud)
+library(widyr)
+library(igraph)
+library(subtools)
+library(topicmodels)
+library(mallet)
+theme_set(theme_minimal())
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+```

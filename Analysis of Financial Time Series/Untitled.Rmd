@@ -1,0 +1,87 @@
+---
+title: "Chapter 1"
+author: "Yifei Liu"
+date: "1/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(fBasics)
+library(tidyverse)
+library(tidyquant)
+library(lubridate)
+library(readtext)
+library(scales)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+
+theme_set(theme_minimal())
+
+da <- read.delim("http://faculty.chicagobooth.edu/ruey.tsay/teaching/fts3/d-ibm3dx7008.txt")
+
+da <- tbl_df(da) %>%
+  mutate(Date = as.Date(as.character(Date), "%Y%m%d"))
+
+data_1 <- read.table("http://faculty.chicagobooth.edu/ruey.tsay/teaching/bs41202/sp2017/m-ibm-6815.txt", header = T) %>% tbl_df() %>%
+  mutate(date = as.Date(as.character(date), "%Y%m%d", origin = "1970-01-01"))
+
+data_1
+
+```
+
+
+
+```{r}
+
+ibm_ret <- data_1 %>%
+  select(date, RET)
+
+ibm_ret <- ibm_ret %>%
+  mutate(log = log(RET + 1)) 
+
+ibm_ret %>%
+  gather(log, RET, key = "method", value = "return") %>%
+  ggplot(aes(date, return, color = method)) +
+  geom_line(show.legend = F) +
+  facet_wrap( ~ method)
+
+
+ibm_ret %>%
+  ggplot(aes(RET)) +
+  geom_density() +
+  stat_function(fun = dnorm, args = c(mean = mean(ibm_ret$RET), sd = sd(ibm_ret$RET)), col = "tomato")
+  
+
+ibm_ret %>%
+  ggplot(aes(log)) +
+  geom_density() +
+  stat_function(fun = dnorm, args = c(mean = mean(ibm_ret$log), sd = sd(ibm_ret$log)), col = "tomato")
+
+ibm_ret %>%
+  tq_performance(Ra = RET,
+                 performance_fun = mean)
+
+ibm_ret %>%
+  tq_performance(Ra = RET,
+                 performance_fun = skewness)
+
+ibm_ret %>%
+  tq_performance(Ra = RET,
+                 performance_fun = kurtosis)
+
+ibm_ret %>%
+  tq_performance(Ra = RET,
+                 performance_fun = kurtosis,
+                 method = "excess")
+
+t.test(ibm_ret$RET)
+
+
+
+
+```
+

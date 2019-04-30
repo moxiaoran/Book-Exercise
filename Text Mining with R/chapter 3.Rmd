@@ -1,0 +1,178 @@
+---
+title: "chapter 3"
+author: "Yifei Liu"
+date: "3/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(tidytext)
+library(janeaustenr)
+library(pdftools)
+library(stringr)
+library(tidyr)
+library(gutenbergr)
+library(pdftools)
+library(tm)
+library(tm.plugin.webmining)
+library(purrr)
+library(methods)
+library(Matrix)
+library(scales)
+library(stringr)
+library(reshape2)
+library(ggraph)
+library(widyr)
+library(wordcloud)
+library(widyr)
+library(igraph)
+library(subtools)
+library(topicmodels)
+library(mallet)
+theme_set(theme_minimal())
+
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+```
+
+So far, we been look at term frequency, now i this case we use inverse document frequency. 
+
+$idf(term) = ln\frac{n_{document}}{n_{documents containing term}}$
+
+## 3.1 Term frequency in Jane's Novels
+
+```{r}
+book_words <- austen_books() %>%
+  unnest_tokens(word, text) %>%
+  count(book, word, sort = T) %>% 
+  ungroup()
+
+total_words <- book_words %>%
+  group_by(book) %>%
+  summarize(total = sum(n))
+
+book_words <- left_join(book_words, total_words)
+
+book_words
+
+```
+
+```{r}
+book_words %>%
+  ggplot(aes(n / total, fill = book)) +
+  geom_histogram(show.legend = F) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~book, ncol = 2, scales = "free_y")
+```
+
+## Zipf's Law
+
+```{r}
+freq_by_rank <- book_words %>%
+  group_by(book) %>%
+  mutate(rank = row_number(),
+         term_frequency = n / total)
+
+freq_by_rank
+
+freq_by_rank %>%
+  ggplot(aes(rank, term_frequency, color = book)) +
+  geom_line(size = 1.1, alpha = .8, show.legend = F) +
+  scale_x_log10() +
+  scale_y_log10(labels = percent_format()) 
+```
+
+
+```{r}
+rank_subset <- freq_by_rank %>%
+  filter(rank < 500, 
+         rank > 10)
+
+test <- lm(log10(term_frequency) ~ log10(rank), data = rank_subset)
+
+freq_by_rank %>%
+  ggplot(aes(rank, term_frequency, color = book)) +
+  geom_line(size = 1.1, alpha = .8, show.legend = F) +
+  geom_abline(intercept = test$coefficients[1], slope = test$coefficients[2], color = "gray50", linetype = 2) +
+  scale_x_log10() +
+  scale_y_log10(labels = percent_format()) 
+
+```
+
+## the bind_tf_idf function
+
+```{r}
+book_words <- book_words %>%
+  bind_tf_idf(word, book, n)
+
+book_words
+
+book_words %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+
+```
+
+```{r}
+book_words %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  group_by(book) %>%
+  top_n(15) %>%
+  ggplot(aes(word, tf_idf, fill = book)) +
+  geom_col(show.legend = F) +
+  labs(x = NULL, y = "tf_idf") +
+  facet_wrap(~book, ncol = 2, scales = "free") +
+  coord_flip()
+
+
+```
+
+
+## A Corpus of Physics Texts
+```{r}
+
+physics <- gutenberg_download(c(37729, 14725, 13476, 5001), meta_fields = "author")
+
+physics_words <- physics %>%
+  unnest_tokens(word, text) %>%
+  count(author, word, sort = T) %>%
+  ungroup()
+
+plot_physics <- physics_words %>%
+  bind_tf_idf(word, author, n) %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word))),
+         author = as.factor(author))
+
+plot_physics %>%
+  group_by(author) %>%
+  top_n(15, tf_idf) %>%
+  ungroup() %>%
+  mutate(word = fct_reorder(word, tf_idf)) %>%
+  ggplot(aes(word, tf_idf, fill = author)) +
+  geom_col(show.legend = F) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~author, scales = "free") +
+  coord_flip()
+  
+  
+
+```
+
+```{r}
+physics %>%
+  filter(str_detect(text, "ac")) %>%
+  select(text)
+```
+
+
+
+
+
+
+

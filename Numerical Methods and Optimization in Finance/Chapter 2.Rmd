@@ -1,0 +1,141 @@
+---
+title: "Chapter 1 - Numerical analysis in a nutshell"
+author: "Yifei Liu"
+date: "2/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(NMOF)
+library(forecast)
+library(scales)
+library(sde)
+library(MASS)
+theme_set(theme_minimal())
+
+```
+
+## Monte Carlo Class
+
+
+```{r}
+N <- 10^4
+U <- runif(N)
+x <- -log(U)
+
+y <- rexp(N)
+
+test <- data.frame(uniform = x,
+                   exp = y)
+
+test %>%
+  gather(name, value) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~ name)
+
+ks.test(x, y)
+```
+### Discretized Stock Process
+
+G
+
+```{r}
+
+stock_geom <- function(s,r,sigma, t, nin) {
+  paths = rep(0, nin + 1)
+  paths[1] <- s
+  dt = t/nin
+  drift = (r-sigma^2/2) *dt
+  risk = sigma*sqrt(dt)
+  for(i in 1:nin) {
+    paths[i+1] <- paths[i] * exp(drift + risk*rnorm(1))
+  }
+  autoplot(ts(paths))
+}
+
+stock_geom(40, 0.05, .35, 3,3*252)
+
+stock_multi <- function(s,r,sigma, t, nin, ntrial) {
+  paths = matrix(0, nrow = nin + 1, ncol =ntrial , byrow = T)
+  paths[1,] <- s
+  dt = t/nin
+  drift = (r-sigma^2/2) *dt
+  risk = sigma*sqrt(dt)
+   for(i in 1:nin) {
+     for(j in 1:ntrial) {
+       paths[i+1, j] <- paths[i, j] * exp(drift + risk*rnorm(1))
+    }
+  }
+  autoplot(ts(paths), facet = F) +
+    labs(x = "Days", y = "Stock Prices", title = "Geometric Brownina Motion",
+         subtitle = paste0("S: ", s, " r: ",percent(r) , " T: ", t," Year ", " N increments: ", nin, " ntrails: ", ntrial)) +
+    theme(legend.position = "none") +
+    scale_y_continuous(labels = dollar_format())
+}
+
+stock_multi(40, 0.05, .35, 3,3*252, 30)
+
+```
+
+
+BS European Call
+
+```{r}
+
+BSCallMC <- function(s, k, r, t, sigma, q, nr) {
+  drift <- (r - q - sigma^2/2) *t
+  risk = sigma * sqrt(t)
+  st = s * exp(drift + risk*runif(nr))
+  intrinsic <- sapply(st, function(x) max(x[1] - k, 0))
+  price = mean(exp(-r*t) * intrinsic)
+  print(price)
+}
+
+
+BSCallMC(20, 20, 0.03, 5/12, .25, 0, 10000)
+```
+
+
+Exchange option
+
+```{r}
+ExchangeMC <- function(s1,s2,sigma1, sigma2,q1, q2, rho, r, t, nr) {
+  z1 <- rnorm(nr)
+  z2 <- rho*z1 + sqrt(1-rho^2)* rnorm(nr)
+  
+  drift1 = (r - q1 - sigma1^2/2)*t
+  risk1 = sigma1*sqrt(t)
+  
+  drift2 = (r - q2 - sigma1^2/2)*t
+  risk2 = sigma2*sqrt(t)
+  
+  ST1 = s1*exp(drift1 + risk1*z1)
+  ST2 = s2*exp(drift1 + risk1*z1)
+  result <- cbind(ST1, ST2)
+  
+  Intrinsic = apply(result, 1, diff)
+  Intrinsic = sapply(Intrinsic, function(x) max(x[1], 0))
+  price <- mean(exp(-r*t) * Intrinsic)
+
+  print(price)
+}
+
+ExchangeMC(40,45,.3,.4, 0, 0, .7,.05,5/12,20000)
+
+```
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,291 @@
+---
+title: "Chpater 2 - Time Series Graphics"
+author: "Yifei Liu"
+date: "1/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+library(scales)
+library(tsibble)
+library(GGally)
+library(fpp2)
+theme_set(theme_minimal())
+
+```
+
+
+2.1 ts objects, tsibble objects
+
+
+```{r}
+y <- ts(c(123, 39, 78, 52, 110), start = 2012)
+
+y <- tsibble(Year = 2012:2016,
+             Observation = c(123,39,78,52,110),
+             index = Year)
+
+```
+
+2.1 Time plots
+
+
+```{r}
+data("melsyd")
+
+autoplot(melsyd[, "Economy.Class"]) +
+  labs(title = "Economy Class Passengers: Melbourne-Sydney",
+       x = "Year",
+       y = "Thousands")
+
+autoplot(a10) +
+  scale_y_continuous(label = dollar_format(prefix = "m$")) +
+  labs(title = "Antidiabetic drug sales",
+       y = "",
+       x = "")
+
+```
+2.4 Seasonal plots
+
+```{r}
+ggseasonplot(a10, year.labels = TRUE, year.labels.left = T) +
+  scale_y_continuous(labels = dollar_format(suffix = "Million")) +
+  labs(title = "Seasonal plot: antidiabetic drug sales",
+       y = "", x = "")
+
+
+ggseasonplot(a10, polar = T) +
+  labs(y = "", x= "", title = "plot seasonal plot: antidiabetic drug sales") +
+  theme(legend.position = "none")
+
+a10 %>%
+  gg_
+
+```
+2.5 Seasonal subseries plots
+
+
+```{r}
+ggsubseriesplot(a10) +
+  labs(y = "", title = "Seasonal subseries plot: antidiabetic drug sales", x= "") +
+  scale_y_continuous(labels = dollar_format(suffix = "Million"))
+  
+
+```
+
+2.6 Scatterplots
+
+```{r}
+autoplot(elecdemand[,c("Demand", "Temperature")], facets = T) +
+  labs(x = "", y = "", title = "Half hourly electricity demand: Victoria, Australia", caption = "Year: 2014")
+
+
+tbl_df(elecdemand) %>%
+  ggplot(aes(Temperature, Demand)) +
+  geom_point(alpha = .1) +
+  labs(x = "Temperature (°C)",
+       y = "Demand (GW)")
+
+
+autoplot(visnights[, 1:5], facets = T) +
+  labs(y = "Number of visitor nights each quarter (millions)",
+       x = "")
+
+
+```
+See the relationship between these five time series
+
+```{r, message=F}
+ggpairs(tbl_df(visnights[, 1:5]))
+```
+
+2.7 Lag plots
+
+```{r}
+beer2 <- window(ausbeer, start = 1992)
+
+gglagplot(beer2)
+
+autoplot(beer2)
+
+gglagplot(a10)
+
+
+
+```
+
+2.8 Autocorrelation
+
+
+
+```{r}
+ggAcf(beer2)
+
+aelec <- window(elec, start = 1980)
+autoplot(aelec) + 
+  labs(x = "", 
+       y = "GWH")
+
+ggAcf(aelec, lag = 48)
+ggAcf(aelec, lag = 12)
+
+Acf(beer2, lag.max = 48, plot = F)
+
+cor(beer2[-(72:74)], beer2[-(1:3)])
+
+```
+
+2.9 White Noise
+
+Time series that show no autocorrelation are called *white noise*
+
+```{r}
+set.seed(2019)
+
+y <- ts(rnorm(100))
+autoplot(y) + labs(x = "", y = "", title = "White Noise")
+
+ggAcf(y)
+
+Acf(y, lag.max = 10, plot = F)
+
+
+
+
+```
+For a white noise series, we expect 95% of the spikes in the ACF to lie within $$±2/\sqrt{T}$$
+
+
+2.9 Exercises
+
+1. Use the help function to explore what the series gold, woolyrnq and gas represent.
+
+* Use autoplot() to plot each of these in separate plots.
+* What is the frequency of each series? Hint: apply the frequency() function.
+* Use which.max() to spot the outlier in the gold series. Which observation was it?
+
+```{r}
+
+# plot the dataset
+
+autoplot(gold)
+autoplot(woolyrnq)
+autoplot(gas)
+
+# check frequency
+
+frequency(gold)
+frequency(woolyrnq)
+frequency(gas)
+
+
+
+
+```
+5. Use the ggseasonplot() and ggsubseriesplot() functions to explore the seasonal patterns in the following time series: writing, fancy, a10, h02.
+
+```{r}
+ggseasonplot(writing)
+ggseasonplot(gas)
+ggsubseriesplot(a10)
+ggsubseriesplot(bricksq)
+ggsubseriesplot(h02)
+autoplot(fancy)
+
+ggseasonplot(fancy)
+ggseasonplot(writing)
+ggseasonplot(a10)
+ggseasonplot(h02)
+
+# I dind't find any unusual years
+
+```
+6. Use the following graphics functions: autoplot(), ggseasonplot(), ggsubseriesplot(), gglagplot(), ggAcf() and explore features from the following time series: hsales, usdeaths, bricksq, sunspotarea, gasoline.
+
+```{r}
+# hsales: Monthly sales of new one family house sold in the USA
+
+autoplot(hsales)
+# we can spot a cyclicity
+ggseasonplot(hsales)
+
+# we can spot a general trend in those series of lines, the sales tend to peak around Mar, or January. 
+ggsubseriesplot(hsales)
+
+# we can see the overal sales trend, it sales more from Mar to Aug and sell less hose in other months. 
+
+gglagplot(hsales, lags = 4)
+
+ggAcf(hsales)
+
+# autocorrlated
+
+# usdeaths: monthly accidental death in USA
+autoplot(usdeaths) +
+  geom_smooth(method = "lm", se = F)
+
+# chart exhibit seasonality, and downward trend
+ggseasonplot(usdeaths)
+ggsubseriesplot(usdeaths)
+gglagplot(usdeaths)
+
+ggAcf(usdeaths)
+
+# r12, r24 is higher than for the other loag, this is due to strong seasonal pattern in the data, the peaks tend to be 12 moths apart. r6, r18 is more negative because tend to be two quarter behind the peaks. The dash line to identify whether the correaltion are exceed the limit
+
+# bricksq: quarterly clay brick production
+
+autoplot(bricksq)
+
+# we can see the trend up from 60 - 80 and the 
+
+bricksq_before <- window(bricksq, 1956, 1980)
+autoplot(bricksq_before) +
+  geom_smooth(method = "lm", se = F)
+ggseasonplot(bricksq_before)
+ggsubseriesplot(bricksq_before)
+gglagplot(bricksq_before)
+ggAcf(bricksq_before)
+
+# we can see their exist a general upward tend in this subseries data, and no clear seasonality. 
+# tend to autocorrelated.
+
+
+bricksq_after <- window(bricksq, 1980)
+
+autoplot(bricksq_after) +
+  geom_smooth(method = "lm", se = F)
+
+```
+
+
+we can see their is season
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
