@@ -22,6 +22,10 @@ library(class)
 library(caret)
 library(ggfortify)
 library(car)
+library(tidyverse)
+library(MASS)
+library(Metrics)
+library(rsample)
 
 detach("package:dplyr", unload=TRUE)
 library(dplyr)
@@ -111,12 +115,41 @@ models %>%
 
 ```
 
+```{r}
+heart <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Heart.csv")
+
+heart <- heart %>%
+  mutate(AHD = as.factor(AHD),
+         Thal = as.factor(Thal),
+         ChestPain = as.factor(Thal)) %>%
+  select(-X1)
+
+heart_mod <- glm(AHD ~., data = heart, family = binomial)
+
+summary(heart_mod)
+
+heart %>%
+  count(AHD, sort = T)
+
+```
+we can correct the estimate intercpet in this case, the people with AHD is clearly to high. 
+
+$\hat\pi = 0.46$ is our sample, and $\pi = 0.05$ is we we observe in practice. 
+
+$\hat\beta^*_{0} = \hat\beta_{0} + log\frac{\pi}{1-\pi} - log\frac{\hat\pi}{1-\hat\pi}$
+
+Diminishing return on unbalance binary data. This is a case-control approach. 
+
 
 ### 4.3.5 Logistic Regression for >2 Response Classes
 
 We tend to use discriminant analysis for multiple class classification.
 
+
+
 ### 4.4 Linear Discriminant Analysis
+
+
 
 ### 4.4.1 Using Bayes' Theorem for Classification
 
@@ -248,6 +281,8 @@ Caravan %>%
 
 ```
 
+
+4.7 
 
 
 
