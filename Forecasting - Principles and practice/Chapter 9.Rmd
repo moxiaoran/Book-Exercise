@@ -433,22 +433,435 @@ autoplot(fc_rand) +
 
 ## 9.7 Exercises. 
 
+1. 
+
+a. Plot the data using autoplot. Why is it useful to set facets=TRUE?
+
+```{r}
+autoplot(advert, facets = T)
+
+
+```
+
+b. Fit a standard regression model $y_t = a + bx_t + \eta_t$ where $y_t$denotes advertising using the tslm() function.
+
+```{r}
+(fit_tslm <- tslm(sales ~ advert, data = advert))
+
+
+```
+
+c. Show that the residuals have significant autocorrelation.
+
+```{r}
+checkresiduals(fit_tslm)
+
+
+```
+
+The ACF plot show the residuals have significant autocorrelation at lag 1 and lag 2. 
+
+d. What difference does it make you use the Arima function instead:
+
+```{r}
+fit_arima <- Arima(advert[, "sales"], order = c(0,0,0))
+
+checkresiduals(fit_arima)
+
+fit_arima_xreg <- Arima(advert[, "sales"],xreg = advert[, "advert"], order = c(0,0,0))
+
+checkresiduals(fit_arima_xreg)
+
+fit_res <- tibble(
+  arima_res = fit_arima$residuals,
+  xreg_res = fit_arima_xreg$residuals,
+  tslm_res = fit_tslm$residuals
+)
+
+fit_res %>%
+  mutate(xreg_dif = xreg_res - tslm_res,
+         arima_dif = arima_res - tslm_res) %>%
+  select(xreg_dif, arima_dif)
+
+```
+
+we can see in the result, residuals difference between arima with xreg argument identical to tslm function. but only arima model is is significant different than tslm model. 
+
+e. Refit the model using auto.arima(). How much difference does the error model make to the estimated parameters? What ARIMA model for the errors is selected?
+
+```{r}
+(fit_auto <- auto.arima(advert[, "sales"], xreg = advert[, "advert"]))
+fit_arima_xreg
+
+```
+arima xreg model is, $y_t =  78.7343 + 0.5343x_t + \eta_t$, where $\eta_t$ is autocorrelated error term.
+
+auto xreg model is $y'_t = 0.5063x_t' + \eta_t'$, where $\eta_t' = \epsilon_t$. 
+
+f. Check the residuals of the fitted model.
+
+```{r}
+checkresiduals(fit_auto)
+
+```
+
+g. Assuming the advertising budget for the next six months is exactly 10 units per month, produce and plot sales forecasts with prediction intervals for the next six months.
+
+```{r}
+auto_for <- forecast(fit_auto, xreg = rep(10, 6))
+
+autoplot(auto_for) +
+  labs(subtitle = "Assume ad spending for the next 6 months is flat 10 units")
+
+```
+
+2. 
+
+a. Fit a piecewise linear trend model to the Lake Huron data with a knot at 1920 and an ARMA error structure.
+
+```{r}
+huron_time <- ts(pmax(0, time(huron)- 1920), start = time(huron)[1])
+
+
+huron_xreg <- cbind(hur_time = time(huron),
+                    t_pw = huron_time)
+
+(huron_auto <- auto.arima(huron, xreg = huron_xreg))
 
 
 
+```
+a piecewise linear trend model with ARIMA(2,0,0) regression error term, and a $\epsilon_t \sim NID(0, 0.459)$
+
+b. Forecast the level for the next 30 years.
+
+```{r}
+huron_xreg <- cbind(hur_time = end(huron)[1] + 1:30,
+                    t_pw = 52 + 1:30)
+
+huron_for <- forecast(huron_auto, xreg = huron_xreg, h = 30)
+
+autoplot(huron_for)
+
+checkresiduals(huron_for)
+
+```
+
+Use the piecewise model we forecast the level of lake will gradually increase of the next 30 years. 
+
+The residuals from the model seem to be white noise. 
+
+3. 
+
+a. Use the data to calculate the average cost of a night’s accommodation in Victoria each month.
+
+```{r}
+autoplot(motel, facets = T)
+
+avg_hotel <- motel %>%
+  tk_tbl() %>%
+  mutate(avg = 1000 * Takings / Roomnights) %>%
+  select(index, avg) 
+
+avg_hotel %>%
+  ggplot(aes(index, avg)) +
+  geom_line() +
+  scale_y_continuous(labels = scales::dollar_format())
+
+avg_ts <- avg_hotel %>%
+  tk_ts(select = avg, start = c(1980, 1), frequency = 12)
+
+```
+
+b. Use cpimel to estimate the monthly CPI.
+
+```{r}
+cpi_auto <- auto.arima(motel[, "CPI"])
+
+autoplot(motel[, "CPI"]) +
+  autolayer(cpi_auto$fitted)
+
+```
+
+c. Produce time series plots of both variables and explain why logarithms of both variables need to be taken before fitting any models.
+
+```{r}
+autoplot(avg_ts)
+autoplot(cpi_auto$fitted)
+
+```
+
+logarithms can make the variations stable cross time. remove heteroskedasticity inside time sieries. 
+
+d. Fit an appropriate regression model with ARIMA errors. Explain your reasoning in arriving at the final model.
+
+```{r}
+avg_cost <- auto.arima(avg_ts, xreg = (motel[, "CPI"]))
+
+checkresiduals(avg_cost)
+ur.df(avg_cost$residuals) %>%
+  summary()
+```
+
+The residuals from regression with ARIMA model look like white noise and also pass ur.df test. 
+
+e. Forecast the average price per room for the next twelve months using your fitted model. (Hint: You will need to produce forecasts of the CPI figures first.)
+
+```{r}
+cpi_for <- forecast(cpi_auto, h = 12)
+
+avg_cost_for <- forecast(avg_cost, xreg = cpi_for$mean, h = 12)
+
+autoplot(avg_cost_for)
+
+```
+
+4. 
+
+Using tslm(), fit a harmonic regression with a piecewise linear time trend to the full gasoline series. Select the position of the knots in the trend and the appropriate number of Fourier terms to include by minimising the AICc or CV value.
+
+```{r}
+autoplot(gasoline)
+
+```
+
+```{r}
+t_knot <- time(gasoline)
+t_knot_1 <- 2007.5
+t_know_2 <- 2013
+
+t_pw_1 <- ts(pmax(0, t_knot - t_knot_1), start = t_knot[1], frequency = frequency(gasoline))
+t_pw_2 <- ts(pmax(0, t_knot - t_know_2), start = t_knot[1], frequency = frequency(gasoline))
 
 
+#reason choose 25 is the max number of repetion should be less than half of the frequency which in this case is 52
+aicc_val <- NULL
+
+for(num in 1:26) {
+  gas_tslm <- tslm(gasoline ~ trend + t_pw_1 + t_pw_2 + fourier(gasoline, K = num))
+  aicc_val[num] <- CV(gas_tslm)["AICc"]
+}
+
+which.min(aicc_val)
+
+# 12 fourier paris have the lowest aicc values. need to review 5.5 selecting predictors. 
+
+tibble(index = 1:26,
+       aicc = aicc_val) %>%
+  ggplot(aes(index, aicc)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "the numer of fourier sin and cos pairs",
+       y = "AICc values",
+       title = "Relationship between num of fourier and AICc value")
+
+gasoline_tslm <- tslm(gasoline ~ trend + t_pw_1 + t_pw_2 + fourier(gasoline, K = 12))
+
+autoplot(gasoline, colour = "gray50") +
+  autolayer(gasoline_tslm$fitted.values, color = "red")
+
+# let's compare CV and AICc value, see do they yield conflict result
+
+CV_val <- list()
+
+for(num in 1:26) {
+  gas_tslm <- tslm(gasoline ~ trend + t_pw_1 + t_pw_2 + fourier(gasoline, K = num))
+  CV_val[[num]] <- CV(gas_tslm)
+}
+
+CV_list <- map(CV_val, ~.x %>% as.list())
+
+aicc_val <- CV_list %>%
+  map_dbl(~.x$AICc)
+
+tibble(index = 1:26,
+       aicc = aicc_val) %>%
+  ggplot(aes(index, aicc)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "the numer of fourier sin and cos pairs",
+       y = "AICc values",
+       title = "Relationship between num of fourier and AICc value")
+
+CV_cv_val <- CV_list %>%
+  map_dbl(~.x$CV)
+
+tibble(index = 1:26,
+       CV = CV_cv_val) %>%
+  ggplot(aes(index, CV)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "the numer of fourier sin and cos pairs",
+       y = "AICc values",
+       title = "Relationship between num of fourier and AICc value")
 
 
+```
+
+we can see as the number of K incrase, the first couple of incrase have more significant impact on decrease AICc value the the rest. 
+
+The fitted chart, as we expected able to capture the general trend in the gasoline. Since we manual input piecewise value. 
+
+After examin AICc and CV value, they yield similary result. 
 
 
+b. Now refit the model using auto.arima() to allow for correlated errors, keeping the same predictor variables as you used with tslm().
+
+```{r}
+gasoline_auto <- Arima(gasoline,
+                            xreg = cbind(time = t_knot,
+                                         t_pw_1 = t_pw_1,
+                                         t_pw_2 = t_pw_2,
+                                         fourier = fourier(gasoline, K = 12)),
+                       order = c(4, 0, 2), seasonal = c(1, 0, 0))
 
 
+```
+
+c. Check the residuals of the final model using the checkresiduals() function. Do they look sufficiently like white noise to continue? If not, try modifying your model, or removing the first few years of data.
+
+```{r}
+checkresiduals(gasoline_auto)
+
+```
 
 
+d. Once you have a model with white noise residuals, produce forecasts for the next year.
+
+```{r}
+autoplot(gasoline) +
+  autolayer(forecast(gasoline_auto, h = 52))
+
+```
 
 
+5. I just ignore this one. 
 
+6. 
+
+```{r}
+retail_data <- readxl::read_excel("/Users/yifeiliu/Documents/R/data/book_exercise/forecasting/retail.xlsx", skip = 1)
+
+myts <- ts(retail_data[, "A3349873A"],
+           frequency = 12, start = c(1982, 4))
+
+autoplot(myts)
+
+```
+
+a. Develop an appropriate dynamic regression model with Fourier terms for the seasonality. Use the AIC to select the number of Fourier terms to include in the model. 
+
+
+```{r}
+retail_lambda <- BoxCox.lambda(myts)
+
+autoplot(myts)
+# we can see there are couple 
+
+t_knot <- time(myts)
+t_knot_1 <- 2002
+t_knot_2 <- 2010
+
+t_pw_1 <- ts(pmax(0, t_knot - t_knot_1), start = t_knot[1], frequency = frequency(myts))
+t_pw_2 <- ts(pmax(0, t_knot - t_knot_2), start = t_knot[1], frequency = frequency(myts))
+
+#reason choose 5 is the max number of repetion should be less than half of the frequency which in this case is 12
+aicc_val <- NULL
+
+for(num in 1:5) {
+  retail_tslm <- tslm(myts ~ trend + t_pw_1 + t_pw_2 + fourier(retail_bc, K = num), lambda = retail_lambda)
+  aicc_val[num] <- CV(retail_tslm)["AICc"]
+}
+
+which.min(aicc_val)
+
+# make harmonic regression model using the lowest AICc number of pairs, in this case K = 5
+
+retail_arima <- auto.arima(myts, xreg = cbind(time = t_knot,
+                                         t_pw_1 = t_pw_1,
+                                         t_pw_2 = t_pw_2,
+                                         fourier = fourier(myts, K = 5)),
+                            lambda = retail_lambda)
+
+
+autoplot(myts) +
+  autolayer(retail_arima$fitted)
+
+```
+
+b. Check the residuals of the fitted model. Does the residual series look like white noise?
+
+```{r}
+checkresiduals(retail_arima)
+```
+The residuals look like white noise. 
+
+
+c. Compare the forecasts with those you obtained earlier using alternative models.
+
+```{r}
+retail_train <- window(myts, start = c(1982, 4), end = c(2012, 12))
+retail_test <- window(myts, start = c(2013,1))
+
+retail_fit1 <- rwf(retail_train, h = 12)
+retail_fit2 <- snaive(retail_train, h = 12)
+retail_fit3 <- auto.arima(retail_train, lambda = retail_lambda) %>%
+  forecast(h = 12)
+retail_fit4 <- ets(retail_train) %>%
+  forecast(h = 12)
+
+t_knot_train <- time(retail_train)
+t_knot_1_train <- 2002
+t_knot_2_train <- 2010
+t_pw_1_train <- ts(pmax(0, t_knot_train - t_knot_1_train), start = t_knot_train[1], frequency = frequency(retail_train))
+t_pw_2_train <- ts(pmax(0, t_knot_train - t_knot_2_train), start = t_knot_train[1], frequency = frequency(retail_train))
+
+xreg_train <- cbind(
+  Fourier = fourier(retail_train, K = 5),
+  time = t_knot_train,
+  t_pw_1 = t_pw_1_train,
+  t_pw_2 = t_pw_2_train
+)
+
+t_knot_test <- time(retail_test)
+t_knot_1_test <- 2002
+t_knot_2_test <- 2010
+t_pw_1_test <- ts(pmax(0, t_knot_test - t_knot_1_test), start = t_knot_test[1], frequency = frequency(retail_test))
+t_pw_2_test <- ts(pmax(0, t_knot_test - t_knot_2_test), start = t_knot_test[1], frequency = frequency(retail_test))
+
+xreg_test <- cbind(
+  Fourier = fourier(retail_train, K = 5, h = 12),
+  time = time(retail_test),
+  t_pw_1 = t_pw_1_test,
+  t_pw_2 = t_pw_2_test
+)
+
+retail_fit5 <- auto.arima(retail_train,
+                          xreg = xreg_train,
+                          lambda = retail_lambda) %>%
+  forecast(h = 12, xreg = xreg_test)
+  
+
+
+map2(list(retail_fit1, retail_fit2, retail_fit3, retail_fit4, retail_fit5), list(retail_test, retail_test, retail_test,retail_test, retail_test), accuracy)
+
+```
+we can say the tslm with arima error term model have the lowest RMSE value, so this model is the 
+
+```{r}
+retail_best <- auto.arima(retail_train, xreg = xreg_train, lambda = retail_lambda)
+
+retail_best
+```
+Here is our best model used for forecast retail data. 
+
+```{r}
+autoplot(retail_train) +
+  autolayer(retail_test, color = "red") +
+  autolayer(retail_fit5, color = "purple", alpha = 0.5)
+
+
+```
 
 
 
