@@ -1,0 +1,53 @@
+---
+title: "Chpater 10"
+author: "Yifei Liu"
+date: "5/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(forecast)
+library(seasonal)
+library(urca)
+library(readxl)
+library(rdatamarket)
+library(fma)
+library(astsa)
+library(tsibble)
+library(fpp2)
+library(tsibbledata) # devtools::install_github("tidyverts/tsibbledata")
+library(broom)
+library(tidyquant)
+library(tidyverse)
+library(sweep)
+library(lubridate)
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+library(tseries)
+library(scales)
+library(GGally)
+library(fpp2)
+library(fpp2)
+library(timetk)
+library(gridExtra)
+library(hts)
+library(ggthemes)
+theme_set(theme_minimal())
+```
+
+```{r}
+tourism.hts <- hts(visnights, characters = c(3, 5))
+tourism.hts %>% aggts(levels=0:1) %>%
+  autoplot(facet=TRUE) +
+  xlab("Year") + ylab("millions") + ggtitle("Visitor nights")
+```
+
+
+
+
+
+
