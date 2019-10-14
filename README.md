@@ -4,4 +4,6 @@ Best way to learn data analysis is doing data analysis, duh. I try to learn diff
 text mining, data cleaning by doing the homework and typing the code in all those books. Here are some results
 
 
-1. ![Canada map on different projection](https://github.com/moxiaoran/Book-Exercise/blob/master/Example/Canada.png)
+## Canada map on different projection
+
+- ![1](https://github.com/moxiaoran/Book-Exercise/blob/master/Example/Canada.png)
