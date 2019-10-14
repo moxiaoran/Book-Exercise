@@ -769,7 +769,7 @@ t_pw_2 <- ts(pmax(0, t_knot - t_knot_2), start = t_knot[1], frequency = frequenc
 aicc_val <- NULL
 
 for(num in 1:5) {
-  retail_tslm <- tslm(myts ~ trend + t_pw_1 + t_pw_2 + fourier(retail_bc, K = num), lambda = retail_lambda)
+  retail_tslm <- tslm(myts ~ trend + t_pw_1 + t_pw_2 + fourier(myts, K = num), lambda = retail_lambda)
   aicc_val[num] <- CV(retail_tslm)["AICc"]
 }
 
@@ -843,7 +843,24 @@ retail_fit5 <- auto.arima(retail_train,
   
 
 
-map2(list(retail_fit1, retail_fit2, retail_fit3, retail_fit4, retail_fit5), list(retail_test, retail_test, retail_test,retail_test, retail_test), accuracy)
+x <- map2(list(retail_fit1, retail_fit2, retail_fit3, retail_fit4, retail_fit5), list(retail_test, retail_test, retail_test,retail_test, retail_test), accuracy)
+
+x <- x %>%
+  set_names(c("rwf", "snaive", "auto.arima", "ets", "tslm_arima")) 
+
+x %>%
+  enframe("username", "x") 
+
+retail_accuracy <- map_dfr(x, as.data.frame) %>%
+  add_column(type = rep(c("train", "test"), 5),
+             method = rep(c("rwf", "snaive", "auto.arima", "ets", "tslm_arima"), each = 2))
+
+retail_accuracy %>%
+  ggplot(aes(method, RMSE, fill = type)) +
+  geom_col(position = "dodge")
+
+retail_accuracy %>%
+  arrange(RMSE)
 
 ```
 we can say the tslm with arima error term model have the lowest RMSE value, so this model is the 

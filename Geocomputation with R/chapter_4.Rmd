@@ -1,0 +1,677 @@
+---
+title: 'Chapter 4: Spatial Data Operations'
+author: "Yifei Liu"
+date: "9/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+# load packages
+library(tidyverse)
+library(dplyr)
+library(sf)
+library(leaflet)
+library(rcartocolor)
+library(raster)
+library(dplyr)
+library(tmap)
+library(maptools)
+library(fasterize) # fasterize is high-performance replacement for the rasterize
+library(gridExtra)
+library(rcartocolor)
+library(stringr) # for working with strings (pattern matching)
+library(tidyr) # for unite() and separate()
+library(spData)
+```
+
+
+
+## 4.1 Introduction
+
+
+## 4.2 Spatial Operations on vectro data
+
+### 4.2.1 Spatial subsetting
+
+just like _attribute subsetting_ in last chapter, you can use filter to subset data. But you can also use spatial subsetting to return all high point in the region
+
+```{r}
+canterbury <- nz %>%
+  filter(Name == "Canterbury")
+
+canterbury_height = nz_height[canterbury, ]
+
+
+```
+
+Various topological relations can be used for spatial subsetting. 
+
+
+```{r}
+nz_height[canterbury, , op = st_disjoint]
+
+nz_height[canterbury, 1, op = st_disjoint]
+
+```
+
+see detail on op=, use ?Sf
+
+```{r}
+sel_sgbp = st_intersects(x = nz_height, y = canterbury)
+
+class(sel_sgbp)
+
+sel_logical = lengths(sel_sgbp) > 0
+canterbury_height2 = nz_height[sel_logical, ]
+
+canterbury_height3 <- nz_height %>%
+  filter(st_intersects(x = ., y = canterbury, sparse = FALSE))
+
+```
+
+
+### 4.2.2 Topological relations
+
+topological relations describe the spatial relationship between objects. To understand them, it helps to have some simple test data to work with. 
+
+```{r}
+# create a polygon
+a_poly <- st_polygon(list(rbind(c(-1, -1), c(1, -1), c(1, 1), c(-1, -1))))
+a = st_sfc(a_poly)
+
+# create a line
+
+l_line <- st_linestring(x = matrix(c(-1, -1, -0.5, 1), ncol = 2))
+l = st_sfc(l_line)
+
+# create points
+p_multi <- st_multipoint(matrix(c(0.5, 1, -1, 0, 0, 1, 0.5, 1), ncol = 2))
+p = st_cast(st_sfc(p_multi), "POINT")
+
+plot(a)
+plot(p, add = T, col = "red")
+
+```
+
+
+A simple query is: which of the points in p intersect in some way with polygon a?
+
+```{r}
+st_intersects(p, a) # p intersect in some way with a
+```
+
+The sparse matrix output only registers a relation if one exists, reducing the memory requirments of topological operations on multi-feature objects. 
+
+```{r}
+st_intersects(p, a, sparse = F)[, 1]
+
+```
+
+the output is a matrix in which each row represents a feature in the target object and each column represent a feature in the selecting object. In this case, only first two featrues in p intersect with a and is only one feature in a so the result has only one column. 
+
+_st_within()_ returns _TRUE_ only for objects that are complete within the selecting objects. This applies only to the first object, which is inside the triangular polygon
+
+```{r}
+
+st_within(p, a, sparse = F)[, 1]
+
+```
+
+Note that although the first point is within the triangle, it does not touch any part of its border. For this reason _st_touch()_ only retruns _TRUE_ fro the second point
+
+```{r}
+st_touches(p, a, sparse = F)[, 1]
+```
+
+what about featrues that do not touch, but almost touch the selection object? use _st_is_within_distance()_
+
+
+```{r}
+st_is_within_distance(p, a, dist = 0.9, sparse = F)[, 1]
+
+```
+
+
+
+### 4.2.3 Spatial Joining
+
+Joiing two non-spatial datasets relies on a shared "key" variables. Spatial data joining applies the same concept, but instead relies on shared areas of geographic space, also known as spatial overlay. 
+
+```{r}
+set.seed(2018)
+(bb_world <- st_bbox(world))
+
+random_df <- tibble(
+  x = runif(n = 10, min = bb_world[1], max = bb_world[3]),
+  y = runif(n = 10, min = bb_world[2], max = bb_world[4])
+)
+
+
+random_points <- random_df %>%
+  st_as_sf(coords = c("x", "y")) %>%
+  st_set_crs(4326)
+
+ggplot() +
+  geom_sf(data = world) +
+  geom_sf(data = random_points, color = "red", fill = NA) +
+  coord_sf() +
+  theme_void()
+
+```
+
+
+the _random_point_ has no attribute data, while the world does. the spatial join operation is done by _st_join()_, which adds the name_long variable to the point
+
+```{r}
+random_joined <- random_points %>%
+  st_join(world["name_long"])
+
+ggplot() +
+  geom_sf(data = world) +
+  geom_sf(data = random_joined, aes(color = name_long), fill = NA) +
+  coord_sf() +
+  theme_void()
+
+```
+
+
+Bu default, _st_join()_ performs a left join, but it can do inner joins by change the default setting _left = TRUE_. Like spatial subsetting, the default topological operator used by _st_join()_ is _st_intersects()_ 
+
+
+### 4.2.4 Non-overlapping joins. 
+
+Sometimes two geographic datasets do not touch but still have a strong geographic relationship enabling joins. 
+
+
+
+```{r}
+plot(st_geometry(cycle_hire), col = "blue")
+plot(st_geometry(cycle_hire_osm), add = TRUE, pch = 3, col = "red")
+
+
+
+```
+
+imagine that we need to join the capacity variable in cycle_hire_osm onto official target data contained in cycle_hire. This is when a non-overlapping join is needed. simplest method is to use the topological operator _st_is_within_distance()_ method, using a threshold distance of 20 m. Before performing the relation, both objects need to transformed into a projected CRS. 
+
+```{r}
+cycle_hire_P = st_transform(cycle_hire, 27700)
+cycle_hire_osm_P = st_transform(cycle_hire_osm, 27700)
+sel = st_is_within_distance(cycle_hire_P, cycle_hire_osm_P, dist = 20)
+summary(lengths(sel) > 0)
+
+
+```
+
+This resumt show there are 438 points in the target object cycle_hire_p within the threshold distance of cycle_hire_osm_P. now we can use _st_join()_ but with an additional _dist_ argument 
+
+```{r}
+
+z = st_join(cycle_hire_P, cycle_hire_osm_P, join = st_is_within_distance, dist = 20)
+
+nrow(cycle_hire)
+nrow(z)
+
+```
+
+Not that the number of rows in joined result is greater than the target. This is because some cycle hire stations in _cycle_hire_P_ have multiple matches in _cycle_hire_osm_P_. 
+
+```{r}
+
+z %>%
+  group_by(id) %>%
+  summarize(capacity = mean(capacity)) %>% 
+  nrow(.) == nrow(cycle_hire)
+
+```
+
+The capacity of nearby stations can be verified by comparing a plot of capacity of the source 
+
+```{r}
+plot(cycle_hire_osm["capacity"])
+plot(z["capacity"])
+
+```
+
+### 4.2.5 Spatial data aggregation
+
+```{r}
+
+nz_avheight <- aggregate(x = nz_height, by = nz, FUN = mean)
+
+nz %>%
+  st_join(nz_height) %>%
+  group_by(Name) %>%
+  summarize(elevation = mean(elevation, na.rm = T)) %>%
+  ggplot() +
+  geom_sf(aes(fill = elevation), color = "black") +
+  scale_fill_carto_c(type = "quantitative") +
+  theme_void() +
+  theme(legend.position = "bottom")
+
+
+```
+
+**NEED REVIEW**
+
+Spatial congruence is an important concept related to spatial aggretion. An aggregating object y is congruent with the target object x if the two objects have shared borders. 
+
+Incongruent aggregating objects, by ontrast, do not share common borders with the target. 
+
+
+
+```{r}
+agg_aw <- st_interpolate_aw(incongruent[, "value"], aggregating_zones,
+                            extensive = T)
+
+agg_aw
+
+```
+
+### 4.2.6 Distance relations
+
+The distance between two objective can be calcuated with the st_distance() function. 
+
+
+```{r}
+
+nz_heightest <- nz_height %>% top_n(1, wt = elevation)
+
+nz_heightest %>%
+  st_distance(st_centroid(canterbury))
+
+
+
+```
+
+
+```{r}
+co <- nz %>%
+  filter(str_detect(Name, "Canter|Otag"))
+
+st_distance(nz_height[1:3, ], co)
+
+```
+
+
+## 4.3 Spatial Operations on raster data
+
+### 4.3.1 Spatial subsetting
+
+The previous chapter demonstrated how to retrive values associated with specific cell IDs or row and column combinations. Raster objects can also be extracted by location (coordinations) and other spatial objects. To use coordinates for subsetting, one can "translate" the coordinates into a cell ID with the raster function _cellFormXY()_. An alternative is to use _raster::extract()_ (function may conflict with tidyverse::extract) to extract values. Both methods are demonstrated below to find the value of the cell that cover a point located .1 units from the origin. 
+
+```{r}
+
+# method 1: use cellFromXY to extract cell ID
+cell_id <- cellFromXY(elev, xy = c(0.1, 0.1))
+cell_id
+
+# method 2: use raster::extract
+raster::extract(elev, data.frame(x = 0.1, y = 0.1))
+
+
+```
+
+Raster objects can also be subset with another object
+
+```{r}
+
+raster_clip <- raster(xmn = 0.9, xmx = 1.8,  ymn = -0.45, ymx = 0.45,
+                      res = 0.3, vals = rep(1, 9))
+
+elev[raster_clip]
+
+raster::extract(elev, extent(raster_clip))
+
+
+```
+
+so far, the subsetting returned the values of specific cells, however, when doing spatial subsetting, one often expects a spatial object as an output. To do this, we can again, use [ when we additionally set the drop parameter to FALSE. 
+
+```{r}
+
+elev[1:2, drop = F]
+elev[1, 1:2, drop = F]
+
+
+```
+
+Another common use of spatial subsetting is when a raster  with logical or NA values is used to mask another raster with the same extent and resolution, as illustrated below. In this case the [, _mask()_ and _overlay()_ functions can be used. 
+
+```{r}
+# create raster mask
+rmask = elev
+values(rmask) = sample(c(NA, TRUE), 36, replace = T)
+
+# spatial subsetting
+
+elev[rmask, drop = F]
+mask(elev, rmask)
+overlay(elev, rmask, fun = "max")
+
+
+```
+
+### 4.3.2 Map algebra
+
+
+### 4.3.3 Local opeations
+
+```{r}
+
+rcl <- matrix(c(0, 12, 3, 12, 24, 5, 24, 30, 6, 30, 38, 10), ncol = 3, byrow = T)
+recl <- reclassify(elev, rcl = rcl)
+
+# NEED REVIEW: just check defination of reclassify, I think, explain much clear than textbook
+```
+
+
+
+```{r}
+
+elev + elev
+
+elev^2
+
+log(elev)
+
+elev > 5
+
+```
+
+In stead of arithmetic operations, one can also use the _calc()_ and _overlay()_ functions. These functions are more efficient, hence, they are perferable in the presence of large raster datasets. Additionally, that allow you directly store an output file. 
+
+Predictive mapping is another interesting application of local raster operations and NDVI 
+
+
+### 4.3.4 Focal operations
+
+While local function operate on one cell, though possibly from multiple layers, *focal* operations take into account a central cell and its neighbors. 
+
+
+```{r}
+elev_df <- as.data.frame(elev, xy = T) # for ggplot
+elev_focal <- focal(elev, w = matrix(1, nrow = 3, ncol = 3), fun = min)
+
+# in ggplot
+chart_1 <- ggplot(data = elev_df) + geom_raster(aes(x = x, y = y, fill = layer), show.legend = F) + scale_fill_carto_c(palette = 2) + geom_text(aes(label = layer, x = x, y = y)) + theme_void() 
+
+elev_focal_df <- as.data.frame(elev_focal, xy = T) # for ggplot
+chart_2 <- ggplot(data = elev_focal_df) + geom_raster(aes(x = x, y = y, fill = layer), show.legend = F) + scale_fill_carto_c(palette = 2, na.value = "grey50") + geom_text(aes(label = layer, x = x, y = y)) + theme_void() 
+
+grid.arrange(chart_1, chart_2)
+
+```
+
+We can quickly check if the output meet our expectations. In our example the minmum values has to be alwasy the upper left cornor of the moving window. In this example, the weighting matrix consists only of 1s, meaning each cell has the same weight on the output, but this can be changed. 
+
+Focal pperation or filters paly a dominant role in image processing. 
+
+### 4.3.5 Zonal operations
+
+Just like Focal operations, _zonal_ operations apply an aggregation function to multiple raster cells. However, a second raster, usually a categorical raster, defines the zonal filter in the case of zonal operations as opposed to a predefined neighborhood window in the case of focal operations. Consequenctly, the raster cells defining the zonal filter do not necessarily have to be neighbors. 
+
+To find the mean elevation for each grain size class, we use zonal() functions
+
+```{r}
+
+z <- zonal(elev, grain, fun = "mean") %>%
+  as.data.frame()
+
+z
+
+```
+
+This returns the statistics for each category, (just like data.frame group_by() %>% summarize()), hence the mean altitude for each grain size class, and can be added to the attribute table of the ratified raster
+
+### 4.3.6 Global operations and distances
+
+### 4.3.7 Map algebra counterparts in vector processing
+
+### 4.3.8 Merging rasters
+
+```{r}
+# aut <- raster::getData("alt", country = "AUT", mask = TRUE)
+# ch <- getData("alt", country = "CHE", mask = T, method = "curl")
+# aut_ch <- merge(aut, ch)
+
+
+```
+
+
+_merge()_ command combines two images, and in case they overlap, it uses the values of the first raster. you can exactly the same with _gdalUtils::mosaic_rasters()_ which is faster, and therefore recommended if you have to merge a multitude of large rasters stored on disk. 
+
+
+## 4.4 Exercises
+
+1. It was established in Section 4.2 that Canterbury was the region of New Zealand containing most of the 100 highest points in the country. How many of these high points does the Canterbury region contain?
+
+```{r}
+
+nz_height[canterbury,] %>%
+  dim()
+
+```
+
+Canterbury region contain 70 high points in NZ
+
+
+2. Which region has the second highest number of nz_height points in, and how many does it have?
+
+```{r}
+
+nz %>%
+  st_join(nz_height) %>%
+  st_set_geometry(NULL) %>%
+  filter(!is.na(elevation)) %>%
+  group_by(Name) %>% 
+  count(sort = T)
+  
+
+```
+
+we can see after join two dataset, *West Coast* region has the second highest number of nz_height points, 22 to be exact.
+
+3. Generalizing the question to all regions: how many of New Zealand’s 16 regions contain points which belong to the top 100 highest points in the country? Which regions?
+
+base on the result from last questions, we can 7 regions contain at least one high point. 
+
+4. Use data(dem, package = "RQGIS"), and reclassify the elevation in three classes: low, medium and high. Secondly, attach the NDVI raster (data(ndvi, package = "RQGIS")) and compute the mean NDVI and the mean elevation for each altitudinal class.
+
+```{r}
+library(classInt)
+data(dem, package = "RQGIS")
+data(ndvi, package = "RQGIS")
+
+# reclassify the elevation in three class
+
+brk <- classIntervals(values(dem), n = 3)$brk
+
+dem_matrix <- matrix(c(brk[1] - 1, brk[2], 1, brk[2], brk[3], 2, brk[3], brk[4], 3), ncol = 3, byrow = T)
+dem_reclas <- reclassify(dem, rcl = dem_matrix)
+
+plot(dem_reclas)
+
+# compute the mean NDVI and mean elevation for each altitudinal class
+
+cellStats(ndvi, mean)
+
+zonal(ndvi, dem_reclas, fun = "mean") %>%
+  as.data.frame()
+
+#correct answer
+
+zonal(stack(dem, ndvi),dem_reclas, fun = "mean") %>%
+  as.data.frame()
+
+```
+
+
+data doesn't exist. I now how to reclassify dem into three classes, just create a 3*3 matrix, third column is the low, mediium and high value, the other two column is the range. use cellStat(ndiv, mean) to calculate the mean of NDVI 
+
+5. Apply a line detection filter to raster(system.file("external/rlogo.grd", package = "raster")). Plot the result. Hint: Read ?raster::focal().
+
+```{r}
+rlogo <- raster(system.file("external/rlogo.grd", package = "raster"))
+
+# compute the sobel filter
+
+Sobel <- matrix(c(1, 2, 1, 0, 0, 0, -1, -2, -1) / 4, nrow=3) 
+f3  <- focal(rlogo, w=Sobel) 
+
+plot(f3, col = c("black", "white"))
+
+```
+
+[edge detection ](https://mgimond.github.io/Spatial/raster-operations-in-r.html)
+
+
+6. Calculate the NDVI of a Landsat image. Use the Landsat image provided by the spDataLarge package (system.file("raster/landsat.tif", package="spDataLarge")).
+
+```{r}
+file = system.file("raster/landsat.tif", package = "spDataLarge")
+landsat = stack(file)
+
+# no idea 
+
+ndvi <- (landsat[["landsat.4"]] - landsat[["landsat.3"]]) / (landsat[["landsat.4"]] + landsat[["landsat.3"]])
+
+plot(ndvi)
+
+ndvi_rtoolbox <- RStoolbox::spectralIndices(landsat, red = 3, nir = 4, indices = "NDVI")
+all.equal(ndvi, ndvi_rtoolbox)
+
+
+```
+
+7. A StackOverflow [post](https://stackoverflow.com/questions/35555709/global-raster-of-geographic-distances) shows how to compute distances to the nearest coastline using raster::distance(). Retrieve a digital elevation model of Spain, and compute a raster which represents distances to the coast across the country (hint: use getData()). Second, use a simple approach to weight the distance raster with elevation (other weighting approaches are possible, include flow direction and steepness); every 100 altitudinal meters should increase the distance to the coast by 10 km. Finally, compute the difference between the raster using the Euclidean distance and the raster weighted by elevation. Note: it may be wise to increase the cell size of the input raster to reduce compute time during this operation.
+
+```{r}
+# Create a raster template for rasterizing the polys. 
+# (set the desired grid resolution with res)
+r <- raster(xmn=-180, xmx=180, ymn=-90, ymx=90, res=1)
+
+# Rasterize and set land pixels to NA
+r2 <- rasterize(world, r, 1)
+r2 <- raster::aggregate(r2, fact = 3)
+r3 <- mask(is.na(r2), r2, maskvalue=1, updatevalue=NA)
+
+# Calculate distance to nearest non-NA pixel
+d <- distance(r3)
+
+# Optionally set non-land pixels to NA (otherwise values are "distance to non-land")
+d <- d*r2
+
+plot(d / 1000)
+```
+
+
+
+```{r}
+world_gadm <- read_sf("/Users/yifeiliu/Documents/R/data/book_exercise/geocom/ne_50m_admin_0_countries/ne_50m_admin_0_countries.shp")
+
+spain_dem <- world %>%
+  filter(str_detect(name_long, "Spain"))
+
+spain_gadm <- world_gadm %>%
+  filter(str_detect(SOVEREIGNT, "Spain"))
+
+spain_dem <- rasterize(spain_dem, r, 1)
+
+spain_gadm <- rasterize(spain_gadm, r, 1)
+
+plot(spain_gadm) 
+plot(is.na(spain_gadm), add = T)
+
+
+spain_dis <- is.na(spain_dem)
+cellStats(spain_dis, summary)
+spain_dis[spain_dis == F] = NA
+spain_dis[spain_dis == T] = 1
+plot(spain_dis)
+
+spain_dis <- raster::distance(spain_dis)
+sapin_dis = mask(spain_dis, spain_gadm)
+spain_dis <- spain_dis / 1000 # convert distance to km
+
+# now let's weight each 100 altitudnal meters by an additional distance of 10 km
+
+spain_dem <- mask(spain_dem, spain_gadm)
+spain_dem[spain_dem < 0] = 0
+weight = spain_dis + spain_dem / 100 * 10
+plot(weight - spain_dis)
+
+
+```
+
+
+
+Open Link:
+
+https://cran.r-project.org/web/packages/fasterize/vignettes/using-fasterize.html
+https://journeynorth.org/tm/LongitudeIntro.html
+https://mgimond.github.io/Spatial/raster-operations-in-r.html
+https://stackoverflow.com/questions/32278825/how-to-change-the-resolution-of-a-raster-layer-in-r
+https://geocompr.github.io/geocompkg/articles/solutions04.html
+https://stackoverflow.com/questions/35555709/global-raster-of-geographic-distances
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

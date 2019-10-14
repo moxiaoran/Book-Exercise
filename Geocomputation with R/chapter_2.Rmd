@@ -1,0 +1,453 @@
+---
+title: 'Chapter 2: Geographic data in R'
+author: "Yifei Liu"
+date: "8/17/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE, message = F, warning=T}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Prequisites 
+
+```{r}
+library(tidyverse)
+library(sf)
+library(sp)
+library(raster)
+library(units)
+library(spData)
+library(ggthemes)
+library(spDataLarge) # devtools::install_github("Nowosad/spDataLarge")
+
+```
+
+
+## 2.1 Introduction
+
+intro fundamental geographic data mdels: vector and raster
+
+*Defination*
+
+- vector data model represents the world using points, lines and polygons. These have discrete, well-defined borders, meaning that vectors datset usually have a high level of precision (but not necessarily accuracy), 
+
+- The raster dataset are the basis of background images used in web-mapping and have been a vital soruce of geographic data since the orgin of aerial photography and satellte-based remote sensing devices. meaning that they are consistent over space and scalabel (many worldwide raster dataset are available)
+
+*Application*
+
+- vector data tends to dominate the social science because human settlements tend to have discrete borders (like map data and census data)
+
+- Raster often dominate in enviormental science because of the reliance on remote sensing data. (PG&E company use satellite image to detech electricity grid ages)
+
+It's possible to conver these two dataset. This book use sf and raster packages to work with vector data and raster dataset, respectively.
+
+
+## 2.2 Vector data
+
+sf is a package providing a class system for geographic vector data. 
+
+### 2.2.1 An introuction to simple features
+
+sf increase several core geometry types: multilinestrings, multipoint, multipolygon, geometrycollection, polygon, point, linstring. 
+
+raster data are *not* supported by sf
+
+
+```{r}
+names(world)
+class(world)
+
+plot(world, max.plot = 10)
+summary(world["lifeExp"]) 
+```
+
+### 2.2.2 Why simpel features?
+
+why use *sf* (simple features) when *sp* is already tried and tested?
+
+- Faster reading and writing of data
+- Enhanced plotting performance
+- sf objects can be treated as data frames in most operations
+- sf functions can be combined using %>% operator and worked well with _tidyverse_ collection of R packages
+- sf function names are relarively consistent and intuitive (all begin iwth st_)
+
+summary: easy to use, more collaboration with core package, effciency, clarity
+
+lot of spatial pakcages now added suppor for sf and you can also transfer sp to sf objec and vice versa
+
+```{r}
+world_sp = as(world, Class = "Spatial")
+class(world_sp)
+world_sf = st_as_sf(world_sp)
+identical(world, world_sf)
+
+```
+
+### 2.2.3 Basic map making
+
+```{r}
+plot(world[3:6])
+plot(world["pop"])
+
+asia <- world %>%
+  filter(continent == "Asia") %>%
+  st_union()
+
+plot(world["pop"], reset = F)
+plot(asia, add = TRUE, col = "red")
+
+```
+
+### 2.2.4 Base plot arguments
+
+
+```{r}
+plot(world["continent"])
+cex = sqrt(world$pop) / 10000
+world_cents = st_centroid(world, of_largest = TRUE)
+plot(st_geometry(world_cents), add = TRUE, cex = cex)
+```
+
+
+### 2.2.5 Geometry types
+Geometries are the basic building blocks of simple features. Simple features in R can take on one of these 17 geometry types supported by the sf package. 
+
+
+
+### 2.2.6 Simple feature geometries (sfg)
+
+```{r}
+
+# single
+st_point(c(5,2))
+st_point(c(5,2,3))
+st_point(c(5,2,1), dim = "XYM")
+st_point(c(5,2,3,1))
+
+# multi
+multipoint_matrix = rbind(c(5,2), c(1,3), c(3,4), c(3,2))
+st_multipoint(multipoint_matrix)
+linestring_matrix = rbind(c(1, 5), c(4,4), c(4,1), c(2,2), c(3,2))
+st_linestring(linestring_matrix)
+
+# final use lists for the creation of multilinestrings (multi-) polygons and geometry collection:
+polygon_list = list(rbind(c(1,5), c(2,2), c(4,1), c(4,4), c(1, 5)))
+st_polygon(polygon_list)
+
+polygon_border = rbind(c(1, 5), c(2, 2), c(4, 1), c(4, 4), c(1, 5))
+polygon_hole = rbind(c(2, 4), c(3, 4), c(3, 3), c(2, 3), c(2, 4))
+polygon_with_hole_list = list(polygon_hole, polygon_border)
+st_polygon(polygon_with_hole_list)
+
+multilinestring_list = list(rbind(c(1, 5), c(4, 4), c(4, 1), c(2, 2), c(3, 2)), 
+                            rbind(c(1, 2), c(2, 4)))
+st_multilinestring((multilinestring_list))
+
+multipolygon_list = list(list(rbind(c(1, 5), c(2, 2), c(4, 1), c(4, 4), c(1, 5))),
+                         list(rbind(c(0, 2), c(1, 2), c(1, 3), c(0, 3), c(0, 2))))
+st_multipolygon(multipolygon_list)
+
+gemetrycollection_list = list(st_multipoint(multipoint_matrix),
+                              st_linestring(linestring_matrix))
+st_geometrycollection(gemetrycollection_list)
+
+```
+
+#### 2.2.7 Simple feature columns (sfc)
+
+One sfg object contains only a single simple feature geometry. A simple feature geometry column (sfc) is a list of sfg objects, which is additionally able to contain information about the coordinate reference system in uses. 
+
+```{r}
+point1 <- st_point(c(5, 2))
+point2 <- st_point(c(1, 3))
+
+points_sfc <- st_sfc(point1, point2)
+points_sfc
+
+```
+All geometries in an sfc object must have the same CRS. We can add coordiante reference system as a crs augument of st_sfc. This arguement accept an integer with the epsg code such as 4326
+
+```{r}
+points_sfc_wgs <- st_sfc(point1, point2, crs = 4326)
+points_sfc_wgs
+
+```
+
+### 2.2.8 The sf class
+
+sf geometry and sf column object are geographic building blocks of geographic vector data represented as simple features. The final building block is non-geographic attributes, representing the name of the feature or other attributes such as measured values, groupe, and other things
+
+```{r}
+lnd_point <- st_point(c(0.1, 51.5)) # sfg object
+lnd_geom <- st_sfc(lnd_point, crs = 4236) # sfc object
+lnd_attributes <- data.frame(
+  name = "London",
+  temperature = 25,
+  data = as.Date("2017-06-21")
+)
+
+lnd_sf <- st_sf(lnd_attributes, geometry = lnd_geom)
+
+lnd_sf
+class(lnd_sf)
+
+```
+
+the result shows that sf object actually have two class, sf and data.frame. Simple features are somply data frames, but with spatial attributes stored in a list column. 
+
+## 2.3 Raster data
+
+### 2.3.1 An introducton to raster
+
+
+```{r}
+
+raster_filepath = system.file("raster/srtm.tif", package = "spDataLarge")
+new_raster = raster(raster_filepath)
+
+new_raster
+
+dim(new_raster)
+ncell(new_raster)
+crs(new_raster)
+res(new_raster)
+
+```
+
+### 2.3.2 Basic map making
+
+```{r}
+
+plot(new_raster)
+
+
+
+```
+
+### 2.3.3 Raster classes
+
+```{r}
+
+raster_filepath = system.file("raster/srtm.tif", package = "spDataLarge")
+new_raster = raster(raster_filepath)
+
+new_raster2 <- raster(nrows = 6, ncols = 6, res = 0.5,
+                      xmn = -1.5, xmx = 1.5, ymn = -1.5, ymx = 1.5,
+                      vals = 1:36)
+
+```
+
+Aside from RasterLayer, there are two more additional classes: RasterBrick and RasterStack. Both can handle multiple layers, but differe regarding teh number of supported file formats, type of internal representation and processing speed. 
+
+A RasterBrick consists of multiple layers, which typically correpsond to a single multispecitral satellite file or a single multilayer object in memory/ The brick function creates a RasterBrick object. 
+
+```{r}
+multi_raster_file = system.file("raster/landsat.tif", package = "spDataLarge")
+r_brick = brick(multi_raster_file)
+
+nlayers(r_brick)
+r_brick
+
+
+
+```
+
+
+RasterStack is a list of RasterLyaer objects with the same extent and resolution. Hence, one way to created it is with teh help of spatial objhects already existing in R global environment. 
+
+```{r}
+
+raster_on_disk <- raster(r_brick, layer = 1)
+raster_in_memory = raster(xmn = 301905, xmx = 335745,
+                          ymn = 4111245, ymx = 4154085, 
+                          res = 30)
+
+values(raster_in_memory) = sample(seq_len(ncell(raster_in_memory)))
+crs(raster_in_memory) = crs(raster_on_disk)
+
+plot(raster_in_memory)
+```
+
+## 2.4 Coordinate Reference Systems
+
+### 2.4.1 Geographic coordinate systems
+
+Geographic coordinate system identify any location on the Earth surface using two values - longitude and latitude. 
+
+Surface of the earth in geographic coordiante system is represntned by ellipsodial or spherical surface. Elliposidial is commonly used because it's more accurate, ususally definated by two parameters: the equatorial radisu and polar radius. 
+
+```{r}
+st_proj_info(type = "datum")
+```
+
+
+### 2.4.2 Projected coordinate reference systems
+
+### 2.4.3 CRSs in R
+
+Two main way to describe CRS in R are an epsg code or a proj4string defination. epsg code easy to remember, proj4string more compicated. 
+
+
+```{r}
+
+vector_filepath = system.file("vector/zion.gpkg", package = "spDataLarge")
+new_vector = st_read(vector_filepath)
+
+# in this case CRS is missing, or in some case wrong CRS is set. The st_set_crs fucntion can be used
+
+new_vector <- st_set_crs(new_vector, 4326)
+
+
+
+```
+
+The projection fucntion can be sed to access CRS information from a Raster* object
+
+```{r}
+
+projection(new_raster)
+
+plot(new_raster)
+
+projection(new_raster) = "+proj=utm +zone=12 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 
+                            +units=m +no_defs"
+
+plot(new_raster)
+
+
+```
+
+compared to vector data, sf, is that raster objects only accept proj4 definations
+
+```{r}
+china = world[world$name_long == "China", ]
+
+st_area(china)
+
+set_units(st_area(china), km^2)
+res(new_raster)
+
+
+
+```
+
+
+## 2.6 Exercises
+1. Use summary on the geometry column of the world data object. What does the output tell us about?
+
+
+```{r}
+# - The geometry type
+class(world)
+
+# sf data type
+
+# - The number of country
+world %>%
+  filter(str_detect(tolower(type), "country")) %>%
+  count()
+
+# 169 countries
+
+# - Its coordinate reference system (CRS)?
+
+st_crs(world)
+
+```
+
+2. Run the code that ‘generated’ the map of the world in Figure 2.5 at the end of Section 2.2.4. Find two similarities and two differences between the image on your computer and that in the book.
+
+```{r}
+
+plot(world["continent"], reset = F)
+cex = sqrt(world$pop) / 10000
+world_cents <- st_centroid(world, of_largest_polygon = T)
+plot(st_geometry(world_cents), add = T, cex = cex)
+
+```
+different projections, book example don't have legend. 
+
+- what does the cex argument do
+
+Amnswer: Define the symbol size. 
+
+- Why was cex set to the sqrt(world$pop) / 10000
+
+display population density
+
+- Bonus: experiment with different ways to visualize the global population.
+
+```{r}
+st_drop_geometry(world) %>% 
+  group_by(continent) %>%
+  summarize(con_pop = sum(pop, na.rm = T) / 1000000) %>%
+  mutate(continent = fct_reorder(continent, con_pop)) %>%
+  ggplot(aes(continent, con_pop)) +
+  geom_col(fill = "yellow", alpha = 0.8) +
+  coord_flip() +
+  labs(x = "", y = "Millions population",
+       title = "Asian is the most populous continent") +
+  theme_fivethirtyeight()
+
+
+```
+
+
+3. Use plot() to create maps of Nigeria in context
+
+- Adjust the lwd, col and expandBB arguments of plot().
+
+```{r}
+nigeria <- world[world$name_long == "Nigeria", ]
+world_africa <- world[world$continent == "Africa", ]
+plot(st_geometry(nigeria), expandBB = c(2.2, 2.2, 2.2, 3), col = "grey", lwd = 4) 
+plot(world_africa[0], add = T)
+
+```
+
+- Challenge: read the documentation of text() and annotate the map.
+
+
+4. Create an empty RasterLayer object called my_raster with 10 columns and 10 rows. Assign random values between 0 and 10 to the new raster and plot it.
+
+```{r}
+
+my_raster <- raster(ncol = 10, nrow = 10)
+
+values(my_raster) <- sample(seq_len(10), 100, replace = TRUE)
+
+plot(my_raster)
+
+```
+
+5. Read-in the raster/nlcd2011.tif file from the spDataLarge package. What kind of information can you get about the properties of this file?
+
+```{r}
+raster_filepath <- system.file("raster/nlcd2011.tif", package = "spDataLarge")
+
+raster_1 <- raster(raster_filepath)
+raster_1
+
+plot(raster_1)
+projection(raster_1)
+res(raster_1)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

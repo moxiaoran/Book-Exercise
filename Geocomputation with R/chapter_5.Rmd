@@ -1,0 +1,1004 @@
+---
+title: 'chapter 5: Geometry operations'
+author: "Yifei Liu"
+date: "10/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# load packages
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(rcartocolor)
+library(raster)
+library(dplyr)
+library(tmap)
+library(rasterVis)
+library(maptools)
+library(fasterize) # fasterize is high-performance replacement for the rasterize
+library(gridExtra)
+library(rcartocolor)
+library(rmapshaper)
+library(stringr) # for working with strings (pattern matching)
+library(tidyr) # for unite() and separate()
+library(spData)
+library(velox) # faster extraction in raster
+library(hrbrthemes)
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+```
+
+## 5.1 Introduction
+
+You should understand and have control over the geometry column in sf objects and the geographic location of pixels represented in raster
+
+
+## 5.2 Geometric operations on vector data
+
+### 5.3.1 Simplification
+
+The sf pacakge provides _st_simplify()_, which uses the GEOS implementation of the Douglas-Peucker algorithm to reduce the vertex count. _st_simplify()_ uses the _dTolerance_ to control the level of generalization in map units 
+
+```{r}
+
+par(mfrow = c(1, 2))
+
+seine_simp <- st_simplify(seine, dTolerance = 2000)
+
+plot(seine)
+plot(seine_simp) # 2000 m
+
+
+```
+
+the resulting is a copy of oringal seine but with few vertices. This is, apparent, with the result being visually simply and cosuming less memeory than the original objects
+
+```{r}
+map_dbl(list(seine, seine_simp), object.size)
+
+
+```
+
+GEOS assume that the data is in a projected CRS and this could lead to unexpected results when using a geographic CRS. 
+
+```{r}
+us_states_projected <- st_transform(us_states, 2163)
+
+# st_simplify works equally well with projected polygons
+
+us_states_simp1 <- st_simplify(us_states_projected, dTolerance = 100000) # 100km
+plot(us_states_simp1 %>% st_geometry())
+```
+
+limitation with st_simplify is that it simplifies objects on a per-geometry basis. This means the topology is lost, resulting in overlapping and holy areal units. _ms_simplify_ from rmapshaper provide an alternative that overcome this issue. 
+
+```{r}
+# proportion of points to retain (0-1, defafault .05)
+us_states_projected$AREA <- as.numeric(us_states_projected$AREA)
+
+us_states_simp2 <- rmapshaper::ms_simplify(us_states_projected, keep = 0.01, keep_shapes = T)
+
+plot(st_geometry(us_states_simp2))
+```
+
+### 5.2.2 Centroids
+
+Centroid operations identify the center of geographic objects. Like statistical measures of central tendency (including mean and median definations of average), there are many wasy of define the geographic center of an object. And sometimes the geographic centroid falls outside the boundaries of the aprent objects. In such case _points on surface_ operations can be used to guarantee the point will be in the parent object. In this case use _st_point_onsurface()_
+
+```{r}
+
+nz_centroid = st_centroid(nz)
+nz_pos <- st_point_on_surface(nz)
+
+seine_centroid <- st_centroid(seine)
+seine_po <- st_point_on_surface(seine)
+
+plot(st_geometry(nz))
+plot(st_geometry(nz_centroid), col = "black", add = T)
+plot(st_geometry(nz_pos), col = "red", add = T)
+
+
+plot(st_geometry(seine))
+plot(st_geometry(seine_centroid), col = "black", add = T)
+plot(st_geometry(seine_po), col = "red", add = T)
+
+
+```
+
+
+### 5.2.3 Buffers
+
+BUffers are polygons representing the area within a given distance of a geometric feature: regarding of whether the input is a point, line or polygon. Unlike simplifications (which is often used for visualization and reducing file size) buffering tends to be used for geographic data analysis (e.g.: calculate does different race people live close to school district or not) 
+
+st_buffer requireds at least two arguments: an input geometry and a dstance
+
+```{r}
+
+seine_buff_5km <- st_buffer(seine, dist = 5000)
+
+plot(seine_buff_5km)
+
+```
+
+### 5.2.4 Affine transformations
+
+Affine transformation is any transformation taht preserves lines and parallelism. However, angles or lengths are not necessarily preserved. Affine transformation inlcudes, shfiting, scaling and rotation
+
+Rotation matrix
+
+
+$\mathbf{R} = \left[\begin{array}
+{rrr}
+cos\theta & - sin \theta \\
+sin\theta & cos\theta  \\
+\end{array}\right]
+$
+
+```{r}
+nz_sfc <- st_geometry(nz)
+# shifts all y-coordinates by 100,000 meters to the north, 
+#but leaves the x-coordiantes untouched
+
+nz_shift = nz_sfc + c(0, 100000) 
+
+plot(nz_sfc) 
+plot(nz_shift, col = "red", add = T)
+
+# scaling enlarge or shrinks objects by a factor, be applied either globall or locally
+
+nz_centroid_sfc <- st_centroid(nz_sfc)
+nz_scale = (nz_sfc - nz_centroid_sfc) * 0.5 + nz_centroid_sfc
+
+plot(nz_sfc)
+plot(nz_scale, col = "red", add = T)
+
+# rotation 
+
+rotation <- function(a) {
+  r = a * pi / 180 # degrees to radians
+  matrix(c(cos(r), sin(r), -sin(r), cos(r)), nrow = 2, ncol = 2)
+}
+
+nz_rotate <- (nz_sfc - nz_centroid_sfc) * rotation(30) + nz_centroid_sfc
+
+plot(nz_sfc)
+plot(nz_rotate, col = "red", add = T)
+
+```
+
+
+### 5.2.5 Clipping
+
+spatial cipping is a form of _spatial subsetting_ that involves chagnes to the _geometry_ column of at least some of the affected features. Clipping can only apply to featrues that are more complex than points: lines, polygons and their "multiple" equivalents
+
+
+```{r}
+
+b <-st_sfc(st_point(c(0, 1)), st_point(c(1, 1)))
+b <- st_buffer(b, dist = 1)
+
+plot(b)
+text(x = c(-0.5, 1.5), y = 1, labels = c("x", "y"))
+
+```
+
+if ypu want to select not one circle or the others, but the space covered by borth x and y and rest of "Venn" diagram representing x and y 
+
+```{r}
+
+x <- b[1]
+y <- b[2]
+
+x_and_y <- st_intersection(x, y)
+
+plot(b)
+plot(x_and_y, col = "lightgrey", add = T)
+
+# in y but not x
+plot(b)
+plot(st_difference(y, x), col = "lightgrey", add = T)
+text(x = 0.5, y = 1, labels = "st_difference(y, x)")
+
+# both x and y
+
+plot(b)
+plot(st_union(y, x), col = "lightgrey", add = T)
+text(x = 0.5, y = 1, labels = "st_union(y, x)")
+
+# not both in x and y
+
+plot(b)
+plot(st_sym_difference(y, x), col = "lightgrey", add = T)
+text(x = 0.5, y = 1, labels = "st_sym_difference(y, x)")
+```
+
+
+
+
+```{r}
+
+box <- st_as_sfc(st_bbox(st_union(x, y)))
+set.seed(2017)
+
+p <- st_sample(x = box, size = 10)
+plot(box)
+plot(x, add = T)
+plot(y, add = T)
+plot(p, add = T)
+text(x = c(-0.5, 1.5), y = 1, labels = c("x", "y"))
+
+```
+
+the logical operator way would find the points inside both x and y using a spatial predicate such as st_intersects
+
+```{r}
+
+sel_p_xy <- st_intersects(p, x, sparse = F)[, 1] &
+  st_intersects(p, y, sparse = F)[, 1]
+
+p_xy1 <- p[sel_p_xy]
+p_xy2 <- p[x_and_y]
+
+identical(p_xy1, p_xy2)
+
+```
+
+### 5.2.6 Geometry unions
+
+Spatial aggregation can silently dissolve the geometries of touching poloygons in the same group. 
+
+```{r}
+
+regions <- aggregate(x = us_states[, "total_pop_15"], by = list(us_states$REGION),
+                     FUN = sum, na.rm = T)
+
+regions2 <- us_states %>%
+  group_by(REGION) %>%
+  summarize(pop = sum(total_pop_15, na.rm = T))
+
+tm_shape(regions2) +
+  tm_fill()
+
+```
+
+what is going on in terms of geometries? Behind the scene, both aggregate and summarize combine the geometries and dissolve the boundaries them using st_union
+
+```{r}
+
+us_west = us_states[us_states$REGION == "West", ]
+us_west_union = st_union(us_west)
+
+texas = us_states[us_states$NAME == "Texas", ]
+texas_union = st_union(us_west_union, texas)
+
+plot(st_geometry(us_west))
+plot(texas_union)
+plot(us_west_union)
+```
+
+
+### 5.2.7 Type transformations
+
+st_cast behave differently on single simple feature geometry _sfg_ objects, sfc, and simple feature objects
+
+```{r}
+multipoint <- st_multipoint(matrix(c(1, 3, 5, 1, 3, 1), ncol = 2))
+
+# st_cast can useful to transform the new object into linestring or polygon
+
+linestring <- st_cast(multipoint, "LINESTRING")
+polyg <- st_cast(multipoint, "POLYGON")
+
+# reverse 
+
+multipoint_2 = st_cast(linestring, "MULTIPOINT")
+multipoint_3 = st_cast(polyg, "MULTIPOINT")
+all.equal(multipoint, multipoint_2, multipoint_3)
+
+
+
+```
+
+
+
+```{r}
+multilinestring_list = list(matrix(c(1, 4, 5, 3), ncol = 2), 
+                            matrix(c(4, 4, 4, 1), ncol = 2),
+                            matrix(c(2, 4, 2, 2), ncol = 2))
+
+multilinestring = st_multilinestring((multilinestring_list))
+
+multilinestring_sf = st_sf(geom = st_sfc(multilinestring))
+
+multilinestring_sf
+
+linestring_sf2 <- st_cast(multilinestring_sf, "LINESTRING")
+
+linestring_sf2
+```
+
+## 5.3 Geometric operations on raster data
+
+Geometric raster operations include the shift, flipping, mirrowing, scaling, rotation or wraping of images. 
+
+### 5.3.1 Geometry intersections
+
+How to extract values from a raster overlaid by oter saptial objects. 
+To retrive a spatial output, we can use almost the same subsetting syntax. The only difference is that we have to make clear that we would like to keep the matrix structure by setting the dop -parameter to FALSE
+
+```{r}
+
+data("elev", package = "spData")
+
+clip <- raster(xmn = 0.9, xmx = 1.8, ymn = -0.45, ymx = 0.45,
+               res = 0.3, vals = rep(1, 9))
+
+
+elev[clip, drop = F]
+
+```
+
+
+### 5.3.2 Extent an origin
+
+When merge or performing map algebra on rasters, their resolution, project, origin and extent have to match. The same problems arises when we would like to merge satellite imagery from different sensors with different projections and resolutions. We can deal with such mismatches by aligning the rasters. 
+
+In the simplest case, two image only differ with regarding to their extent. Following code adds one row and two columns to each side of the raster while setting all new values to an elevation of 1000 meters
+
+```{r}
+
+data(elev, package = "spData")
+
+elev_2 <- extend(elev, c(1, 2), value = 1000)
+
+map(list(elev, elev_2), extent)
+
+```
+
+
+Performing an algebra operation on two objects with differing extents in R, the raster packages returns the result for the intersection, and says so in a warnings. 
+
+```{r}
+
+elev_3 <- elev + elev_2
+
+plot(elev_3)
+
+identical(elev_3, raster::intersect(elev, elev_2))
+
+```
+
+However, we can also align the extent of two rasters with extend. Instead of telling the function how may rows or columns should be added. We allow it to figure it out by using another raster object. Here, we extend the elev object to the extent of elev_2. 
+
+```{r}
+
+elev_4 <- extend(elev, elev_2)
+
+```
+
+the origin or a raster is the cell cornor closest to the coordinate (0,0). You can change raster orgin if two raster have different origins, since different origin make cells do not overlap completely which make map algebra impossible. 
+
+```{r}
+
+origin(elev_4) <- c(0.25, 0.25)
+
+plot(elev_4)
+plot(elev, add = T)
+
+```
+
+
+### 5.3.3 Aggregation and disaggregation
+
+Different dataset can also differ with regard to their resolution. To match resolutions, one can either decrease or increase the resolution of one raster. Basically match resolution between different raster objects. 
+
+```{r}
+
+data("dem", package = "RQGIS")
+dem_agg <- aggregate(dem, fact = 5, fun = mean)
+
+plot(dem)
+plot(dem_agg)
+
+```
+
+
+```{r}
+
+dem_disagg <- disaggregate(dem_agg, fact = 5, method = "bilinear")
+
+plot(dem_disagg)
+identical(dem_disagg, dem)
+
+```
+
+
+The process of computing values of new pixel locations is also called resampling. In fact, the raster pacakge provides a resample fucntion. It lets you align several raster properties in one go, namely orign, extent and resolution. By default, it uses the bilinear -interpolation
+
+```{r}
+
+dem_agg <- extend(dem_agg, 2)
+dem_disagg_2 <- resample(dem_agg, dem)
+
+```
+
+Finally, in order to align many (possible hundres or thoughsand of) iamges stroed on disk, you could use the gdaltils::align_rasters function. However, you may also use raster with very large dataset. 
+
+
+## 5.4 Raster-vector interaction
+
+This section focuses on interactions between raster and vector geographic data models. it includes four main techniques: 
+
+1. raster cropping, masking using vector objects
+2. extracting raster values using different types of vector data
+3. raster-vector conversion
+4. demonstrating using data used in previous chapter to understand their potential real-world applications
+
+### 5.4.1 Raster cropping
+
+Many geographic data objects involve integrating data from many different soruces, such as remote sensing image (raster) and adminstrative boundaries. Often the extent of input raster datasets is larger thant the area of interest. In these case raster cropping and masking are useful for unifying the spatial extent of input data. 
+
+```{r}
+
+srtm = raster(system.file("raster/srtm.tif", package = "spDataLarge"))
+zion = st_read(system.file("vector/zion.gpkg", package = "spDataLarge"))
+map(list(srtm, zion), crs) # see that two file have different crs, so we need to reporject them
+
+zion = st_transform(zion, projection(srtm))
+
+
+```
+
+_crop()_ reduces the rectangular extent of the object passed to its first argument based on the exent of the object passed to its second argument. 
+
+```{r}
+srtm_cropped <- crop(srtm, zion)
+```
+
+Related to _crop()_ is the raster function _mask()_, which sets values outside of bounds of the object passed to its second argument to NA. change the setting of mask yield different results. Setting _updatevalue = 0_, for example, will set all pixels outside the national park to 0. Setting _inverse = TRUE_ will mask inside the bounds of the park pixels to 0
+
+```{r}
+srtm_mask <- mask(srtm, zion)
+srtm_inv_mask <- mask(srtm, zion,inverse = T)
+
+plot(srtm_cropped)
+plot(srtm_mask)
+plot(srtm_inv_mask)
+
+```
+
+### 5.4.2 Raster extraction
+
+point extraction
+
+```{r}
+
+data("zion_points", package = "spDataLarge")
+zion_points$elevation = raster::extract(srtm, zion_points)
+
+```
+
+Raster extraction also works with lines selectors. 
+
+```{r}
+
+zion_transect = cbind(c(-113.2, -112.9), c(37.45, 37.2)) %>%
+  st_linestring() %>% 
+  st_sfc(crs = projection(srtm)) %>% 
+  st_sf()
+
+transect = raster::extract(srtm, zion_transect, along = TRUE, cellnumbers = TRUE)
+
+```
+
+the along= TRUE and cellnumber = TRUE arguments to return cell IDs along the path. the result is a list contains a matrix of cell IDs in the first column and elevation values in the second. 
+
+The subsequent code chunk first converts this tricky matrix-in-a-list object into a simple data frame, returns the coordiantes associate with each extracted cell, and finds the associated distances along the transect. 
+
+```{r}
+
+transect_df <- purrr::map_dfr(transect, as.data.frame, .id = "ID")
+
+transect_coords <- xyFromCell(srtm, transect_df$cell)
+
+pair_dist = geosphere::distGeo(transect_coords)[-nrow(transect_coords)]
+
+transect_df$dist = c(0, cumsum(pair_dist))
+
+ggplot(transect_df) +
+  geom_line(aes(x = dist, y = srtm)) +
+  labs(x = "Distance (m)", y = "Elevation (m a.s.l.)",
+       title = "Elevation along the line") +
+  theme_ipsum(grid = "XY")
+
+```
+
+The final type of geographic vector object for raster extraction is polygons, like lines and buffers, polygons tend to return many raster valeus per polygon. 
+
+```{r}
+
+zion_srtm_values <- raster::extract(x = srtm, y = zion, df = T)
+
+```
+
+such results can be used to generate summary statistics for raster values per polygon, for example to characterize a single region or compare many regions. 
+
+```{r}
+
+zion_srtm_values %>%
+  group_by(ID) %>%
+  summarize(min = min(srtm),
+            mean = mean(srtm),
+            median = median(srtm),
+            max = max(srtm))
+
+```
+
+
+```{r}
+data("nlcd", package = "spDataLarge")
+zion_nlcd = raster::extract(nlcd, st_transform(zion, projection(nlcd)), df = TRUE, factors = TRUE) 
+
+zion_nlcd %>%
+  select(ID, levels) %>% 
+  gather(key, value, -ID) %>%
+  group_by(ID, key, value) %>%
+  tally() %>%
+  spread(value, n, fill = 0)
+
+
+```
+
+Fast way to extracting raster cell values from a range of input geographic objects. 
+
+1. *Parallelization* : using many geographic vector select object by splitting them into groups and extracing cell values independently for each group (raster::clusterR() for details of this approach). WHen we use extract in polygons extraction we automatic use this function
+
+2. *velox* pacakge, which provides a faster method for extracting raster data that fit in memory 
+
+```{r}
+
+```
+
+
+3. Using *R-GIS bridges*: efficient calcuation of raster statistics from polygons can be found in the SAGA function saga:gridstatisticforpolygons
+
+### 5.4.3 Rasterization
+
+Rasterization is the conversion of vector data object into their representation in raster objects. 
+
+The _rasterize()_ function contain two arguments x, vector object to be rasterized and y, a 'template raster' object defining the extent, resolution and CRS of the output. the geographic resolution of the input raster has a major impact on the results. 
+
+
+```{r}
+cycle_hire_osm_projected = st_transform(cycle_hire_osm, 27700)
+raster_template = raster(extent(cycle_hire_osm_projected), resolution = 1000,
+                         crs = st_crs(cycle_hire_osm_projected)$proj4string)
+
+
+
+```
+
+Rasterization is a very flexible operation: the results not only on the nature of the template raster, but also on the type of input vector and a variety of arguments taken by the rasterize function
+
+First, we create a raster representing the presence or absence of cycle hire points. 
+
+```{r}
+
+ch_raster1 <- rasterize(cycle_hire_osm_projected, raster_template, field = 1)
+
+plot(ch_raster1)
+
+```
+
+the _fun_ argument speficies summary statistics used to convert multiple observation in close proximity into assocaite cells in the raster object. By default fun = "last" is used but other options such as fun = "count" can be used
+
+```{r}
+
+ch_raster2 <- rasterize(cycle_hire_osm_projected, raster_template, field = 1, fun = "count")
+
+plot(ch_raster2)
+
+```
+
+the new output, ch_raster2, shows the number of cycle hire points in each grid cell. The cycle hire location have different numbers of bicycles described by the capacity variable, rasing the question, what's the capacity in each grid cell. 
+
+```{r}
+
+ch_raster3 <- rasterize(cycle_hire_osm_projected, raster_template,
+                        field = "capacity", fun = sum)
+
+plot(ch_raster3)
+
+```
+
+```{r}
+
+california = dplyr::filter(us_states, NAME == "California")
+california_borders = st_cast(california, "MULTILINESTRING")
+raster_template2 = raster(extent(california), resolution = 0.5,
+                         crs = st_crs(california)$proj4string)
+
+
+```
+
+
+Line rasterization is demonstrated in the code below. 
+
+```{r}
+
+california_raster1 <- rasterize(california_borders, raster_template2)
+
+plot(california_raster1)
+
+```
+
+Polygon rasterization, by contrast, selects only cells whose *centroids* are inside polygon
+
+```{r}
+library(microbenchmark)
+california_raster2 <- rasterize(california, raster_template2)
+california_raster3 <- fasterize(california, raster_template2)
+microbenchmark(rasterize(california, raster_template2), fasterize(california, raster_template2))
+
+
+plot(california_raster2) 
+
+```
+
+### 5.4.4 Spatial Vectorization
+
+It involves converting spatially continous raster data into saptially discrete vector data such as points, lines or polygons
+
+*Keep in mind. In R, vectorization refers to the possibliiyt of replacing for- loops and alike by doing things like 1:10 / 2*
+
+
+```{r}
+
+elev_point <- rasterToPoints(elev, spatial = T)
+plot(elev)
+plot(elev_point)
+
+```
+
+
+Another common type of spatial vectorization is the creation of contour lines representing lines of continuous height or temperatures for example
+
+```{r}
+data(dem, package = "RQGIS")
+cl = rasterToContour(dem)
+plot(dem, axes = FALSE)
+plot(cl, add = TRUE)
+
+
+```
+
+Contours can also be added to existing plot with function such as contour an contourplot or tm_iso
+
+```{r}
+# create hillshade
+hs <- hillShade(slope = terrain(dem, "slope"), aspect = terrain(dem, "aspect"))
+plot(hs, col = gray(0:100 / 100), legend = F)
+
+# overlay with DEM
+plot(dem, col = terrain.colors(25), alpha = 0.5, legend = F, add = T)
+
+# add contour lines
+contour(dem, col = "white", add = T)
+```
+
+The final type of raster vectoriization involves conversion of raster to polygons. 
+
+This is illustrate by converting the grain object into polygons and subsequently dissolving borders between polygons with the same attributes. Attributes in this case are stored in a column called layer
+
+```{r}
+
+grain_poly <- rasterToPolygons(grain) %>%
+  st_as_sf()
+
+grain_poly2 <- grain_poly %>%
+  group_by(layer) %>%
+  summarize()
+
+# or just rasterToPolygons(grain, dissolve = T) %>% st_as_sf()
+```
+
+
+## 5.5 Exercise
+
+```{r}
+
+library(RQGIS)
+data(random_points)
+data(ndvi)
+ch = st_combine(random_points) %>% 
+  st_convex_hull()
+
+```
+
+1. Generate and plot simplified versions of the nz dataset. Experiment with different values of keep (ranging from 0.5 to 0.00005) for ms_simplify() and dTolerance (from 100 to 100,000) st_simplify().
+
+- At what value does the form of the result start to break down for each method, making New Zealand unrecognizable?
+
+```{r}
+nz_geo <- st_geometry(nz)
+
+map(c(100, 1000, 10000, 100000), ~ plot(st_simplify(nz_geo, dTolerance = .x)))
+
+plot(st_simplify(nz_geo, dTolerance = 100000, preserveTopology = T))
+
+```
+Use st_simplify function, it start to bread down at 100,000.
+
+Answer: problems: st_simplify returns polygon and multipolygon resuts, affecting plotting. Cast into a simple geometry type to resolve this
+
+```{r}
+
+nz_simple_multipoly <- st_simplify(st_geometry(nz), dTolerance = 10000) %>% 
+  st_sfc() %>% 
+  st_cast("MULTIPOLYGON")
+
+plot(nz_simple_multipoly)
+```
+
+
+```{r}
+map(c(0.5, 0.005, 0.0005, 0.00005), ~ plot(ms_simplify(nz_geo, keep = .x)))
+
+
+
+```
+
+Use ms_simplify, nz start to break down at 0.05 level
+
+```{r}
+nz_simply1 <- st_simplify(nz_geo, dTolerance = 100)
+nz_simply2 <- ms_simplify(nz_geo, keep = 0.5)
+
+map(list(nz_geo, nz_simply1, nz_simply2), class)
+
+```
+After simplify, result from st_simplify change to sfc_GEOMETRY instead of sfc_multipolygon. 
+
+2. In the first exercise in Chapter 4 it was established that Canterbury region had 70 of the 101 highest points in New Zealand. Using st_buffer(), how many points in nz_height are within 100 km of Canterbury?
+
+```{r}
+
+canterbury <- nz %>% filter(Name == "Canterbury")
+
+nz_height_buffer <- st_buffer(nz_height, dist = 100)
+
+plot(st_geometry(nz)) 
+plot(st_geometry(nz_height_buffer), add = T)
+
+canterbury_within <- st_intersection(canterbury, nz_height_buffer)
+nrow(canterbury_within)
+```
+
+There are 75 out of 101 highest points inside New Zealand within 100 km of canterbury. 
+
+3. Find the geographic centroid of New Zealand. How far is it from the geographic centroid of Canterbury?
+
+```{r}
+
+nz_centroid <- st_centroid(st_union(nz))
+canterbury_centroid <- st_centroid(canterbury)
+
+st_distance(nz_centroid, canterbury_centroid)
+
+```
+
+234192.6 meters, is the distance between center of nz and center of canterbury
+
+4. Most world maps have a north-up orientation. A world map with a south-up orientation could be created by a reflection (one of the affine transformations not mentioned in Section 5.2.4) of the world object’s geometry. Write code to do so. Hint: you need to use a two-element vector for this transformation.
+
+```{r}
+world_sfc <- st_geometry(world)
+
+world_southup <- world_sfc * matrix(c(-1,-1), ncol = 2)
+plot(world_southup)
+
+```
+
+- Bonus: create an upside-down map of your country.
+
+```{r}
+
+china_sfc <- world %>%
+  filter(name_long %in% c("China", "Taiwan")) %>%
+  st_union() %>%
+  st_geometry()
+
+china_southup <- china_sfc * matrix(c(-1,-1), ncol = 2)
+plot(china_southup)
+
+
+```
+
+5. Subset the point in p that is contained within x and y (see Section 5.2.5 and Figure 5.8).
+
+```{r}
+plot(box)
+plot(x, add = TRUE)
+plot(y, add = TRUE)
+plot(p, add = TRUE)
+text(x = c(-0.5, 1.5), y = 1, labels = c("x", "y"))
+
+```
+
+- Using base subsetting operators.
+
+```{r}
+
+p[b]
+
+```
+
+- Using an intermediary object created with st_intersection().
+
+```{r}
+
+st_intersection(b, p)
+
+```
+
+6. Calculate the length of the boundary lines of US states in meters. Which state has the longest border and which has the shortest? Hint: The st_length function computes the length of a LINESTRING or MULTILINESTRING geometry.
+
+```{r}
+
+us_states %>%
+  mutate(state_border = st_length(geometry)) %>%
+  arrange(desc(state_border))
+
+```
+
+Texas have the highest border line. 
+
+7. Crop the ndvi raster using (1) the random_points dataset and (2) the ch dataset. Are there any differences in the output maps? Next, mask ndvi using these two datasets. Can you see any difference now? How can you explain that?
+
+```{r}
+plot(ndvi)
+plot(st_geometry(random_points), add = T)
+plot(ch, add = T)
+
+# crop, reduce the rectangular extent of the object passed to its first argument based on the extent of the object passed to its second argument
+
+ndvi_ran_crop <- crop(ndvi, as(random_points, "Spatial"))
+spplot(ndvi_ran_crop)
+
+ndvi_ch_crop <- crop(ndvi, as(ch, "Spatial"))
+spplot(ndvi_ran_crop)
+
+# mask compare to crop, preserve the extent of the first object, but sets values outside of the object passed to its second argument to NA
+
+ndvi_ran_mask <- mask(ndvi, as(random_points, "Spatial"))
+spplot(ndvi_ran_mask)
+
+ndvi_ch_mask <- mask(ndvi, as(ch, "Spatial"))
+spplot(ndvi_ch_mask)
+
+
+```
+
+
+
+8. Firstly, extract values from ndvi at the points represented in random_points. Next, extract average values of ndvi using a 90 buffer around each point from random_points and compare these two sets of values. When would extracting values by buffers be more suitable than by points alone?
+
+```{r}
+random_buffer <- st_buffer(random_points, dist = 90)
+plot(ndvi)
+plot(st_geometry(random_buffer), add = T)
+plot(ch, add = T)
+```
+
+
+```{r}
+random_points$ndvi1 <- raster::extract(ndvi, as(random_points, "Spatial"))
+
+random_points$ndvi2 <- raster::extract(ndvi, as(random_points, "Spatial"), buffer = 90, fun = mean, na.rm = T)
+
+ggplot(random_points) +
+  geom_point(aes(x = ndvi1, y = ndvi2)) +
+  theme_ipsum_es()
+
+
+
+```
+
+Extracting values by buffers is more suitable than by points alone, for example when we expect errors in single raster cells. Average values can decreases an effect of errorness values in some raster vells
+
+
+9. Subset points higher than 3100 meters in New Zealand (the nz_height object) and create a template raster with a resolution of 3 km. Using these objects:
+
+```{r}
+
+nz_3100 <- nz_height %>%
+  filter(elevation > 3100)
+
+nz_3100_template <- raster(extent(nz_3100), resolution = 3000,
+                           crs = st_crs(nz_3100)$proj4string)
+
+plot(st_geometry(nz_3100), graticule = st_graticule(nz_3100, datum = 2193), axes = T)
+
+```
+
+
+- Count numbers of the highest points in each grid cell.
+
+```{r}
+
+high_raster1 <- rasterize(nz_3100, nz_3100_template, field = 1, fun = "count")
+spplot(high_raster1)
+
+```
+
+- Find the maximum elevation in each grid cell.
+
+```{r}
+
+high_raster2 <- rasterize(nz_3100, nz_3100_template, field = "elevation", fun = "max")
+spplot(high_raster2)
+
+
+```
+
+10. Aggregate the raster counting high points in New Zealand (created in the previous exercise), reduce its geographic resolution by half (so cells are 6 by 6 km) and plot the result.
+
+```{r}
+
+high_raster3 <- raster::aggregate(high_raster1, fact = 2, fun = sum)
+
+spplot(high_raster3)
+
+```
+
+- Resample the lower resolution raster back to a resolution of 3 km. How have the results changed?
+
+```{r}
+
+high_raster4 <- resample(high_raster3, high_raster1)
+
+spplot(high_raster4)
+
+```
+
+- Name two advantages and disadvantages of reducing raster resolution
+
+Advange: low memory use advantage: faster processing advantage: good for vis in some cases
+Disadvange: remove geographic detail
+
+11. Polygonize the grain dataset and filter all squares representing clay.
+
+```{r}
+grain_poly <- rasterToPolygons(grain) %>%
+  st_as_sf()
+
+clay <- grain_poly %>%
+  filter(layer == 1)
+
+plot(clay)
+```
+
+- Name two advantages and disadvantages of vector data over raster data.
+
+Advange: can be used to subset other vector object, can do affine transformation and use sf/dplyr verbs
+Disadvange: better consistency, fast processing on some operation. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+

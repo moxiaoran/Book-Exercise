@@ -1,0 +1,36 @@
+---
+title: 'Chapter 7: Geographic data I/O'
+author: "Yifei Liu"
+date: "10/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(raster)
+library(dplyr)
+library(spData)
+```
+
+## 7.1 Introduction
+
+This chapter is about read and write geographic data. Geo data import is essential for geocomputation. 
+
+## 7.2 Retriving open data
+
+A vast and ever-increasing amount of geographic data is avaiable on the internet. In some way there is now too much data, in the sense that there are often multiple palces to access the same dataset. And some place data quality is poor. So it is vital to know where to look at. Various "geoportals" (web services providing geospatial datasets such as Data.gov) are a good place to start, providing a wide range of data but often for specific locations
+
+### 7.3 Geographic data packages
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,85 @@
+---
+title: 'Chapter 1: Introduction'
+author: "Yifei Liu"
+date: "8/15/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Purpose of this book:
+
+1. reading writing and manupulating geographic data
+2. making static and interactive maps
+3. Applying geocomputation to solve real-world problems 
+4. Modeling geographic phenomena
+
+## 1.1 What is geocomputations?
+
+
+## 2.2 Why use R for gecomputation?
+
+
+```{r}
+library(leaflet)
+popup = c("Robin", "Jakub", "Jannes")
+leaflet() %>%
+  addProviderTiles("Stamen.TonerLite",
+                     group = "Toner") %>%
+  addMarkers(lng = c(-3, 23, 11),
+             lat = c(52, 53, 49), 
+             popup = popup)
+
+
+```
+
+## 1.5 The history of R-spatial 
+
+
+## 1.6 Exercise
+
+1. Think about the term 'GIS', 'GDS' and 'gecomputation' describe above. Which (if any) best describes the work you would like to do use geo* mehthods and software and why?
+
+By checking the definenation of these terms, I think I'm currently more interest in "GDS", as a social science major(Finance analysis and quantitative risk management major) I more interest in the relationship between, demographic, geographic and social measurement such as household income, net immigration. I think by incorporate geographic data will give me a new perspective. And also make chart cooler. :)
+ 
+ 2. Provide three reasons for using a scriptable language such as R for gecomputation instead of using an established GIS program such as QGIS
+ 
+ This is easy for me, never use GIS program such as QGIS in my life, but I'm pretty familary with R langauge and graphic packages such as ggplot and leaflet.
+ 
+ 3. Name two advantanges and two disadvantage of using mature vs recent packages for geographic data analysis (for example *sp* vs *sf*)
+ 
+ THe reason people invent new packages is because some features require the featrues that old packages don't support very well.
+ 
+ 
+
+
+```{r}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

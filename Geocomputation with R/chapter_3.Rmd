@@ -1,0 +1,309 @@
+---
+title: 'Chapter 3: Attribute data operations'
+author: "Yifei Liu"
+date: "9/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(sf)
+library(raster)
+library(dplyr)
+library(ggthemes)
+library(rcartocolor)
+library(stringr) # for working with strings (pattern matching)
+library(tidyr) # for unite() and separate()
+library(spData)
+
+```
+
+## 3.1 Introduction
+
+For vector data, sf dataset, this means operations such as subsetting and aggregation. 
+
+For Raster attributed data operations cover creating continuous and categorical raster alyers and extracting cell values from one layer and mltiple layers 
+
+
+## 3.2 Vector attibute manupulation
+
+```{r}
+methods(class = "sf")
+
+```
+
+```{r}
+
+dim(world)
+nrow(world)
+ncol(world)
+
+# remove its geometry
+
+world_df <- st_drop_geometry(world)
+class(world_df)
+
+```
+
+### 3.2.1 Vector attibuted subsetting
+
+### 3.2.2 Vector attibute aggregation
+
+```{r}
+
+aggregate(pop ~ continent, FUN = sum, data = world, na.rm = T)
+aggregate(world["pop"], by = list(world$continent),
+          FUN = sum, na.rm = T)
+
+
+```
+
+
+### 3.2.3 Vector attribute joining
+
+use dplyr _join() functions
+
+```{r}
+world_coffee <- left_join(world, coffee_data)
+
+class(world_coffee)
+
+ggplot(world_coffee) +
+  geom_sf(aes(fill = coffee_production_2016)) +
+  scale_fill_gradientn(colors = carto_pal(name = "TealRose", n = 7), na.value = NA) +
+  theme_void() +
+  theme(legend.position = "none")
+
+```
+
+
+```{r}
+
+setdiff(coffee_data$name_long, world$name_long)
+
+
+
+```
+
+### 3.2.4 Creating attributes and removing spatial information
+
+## 3.3 Manipulating raster objects
+
+```{r}
+
+elev <- raster(nrows = 6, ncols = 6, res = 0.5,
+               xmn = -1.5, xmx = 1.5, ymn = -1.5, ymx = 1.5, 
+               vals = 1:36)
+
+plot(elev)
+```
+
+```{r}
+
+grain_order = c("clay", "silt", "sand")
+grain_char <- sample(grain_order, 36, replace = T)
+grain_fact <- factor(grain_char, levels = grain_order)
+
+levels(grain)[[1]] <- cbind(levels(grain)[[1]], wetness = c("wet", "moist", "dry"))
+
+levels(grain)
+factorValues(grain, grain[c(1, 11, 35)])
+
+plot(grain)
+
+```
+
+### 3.3.1 Raster subsetting
+
+Raster subsetting is done with the abse R operator [, which accpets a varity of inputs:
+
+- Row-column indexing
+- cell IDs
+- Coordiante
+- Another spatial object
+
+```{r}
+elev[1,] # row1, column1
+elev[1] #cell ID 1
+
+```
+
+For multi-layered raster objects stack or brick, this will return the cell values for each layers. 
+
+```{r}
+r_stack = stack(elev, grain)
+names(r_stack) = c("elev", "grain")
+
+# three ways to extrac a layer of a stack
+
+raster::subset(r_stack, "grain")
+r_stack[["elev"]]
+r_stack$elev
+
+```
+
+cell values can be modified by overwrting existing values 
+
+### 3.3.1 Summarizing raster objects
+
+```{r}
+
+# RasterLayer
+cellStats(elev, sd)
+# Raster*
+
+summary(brick(elev, grain))
+
+hist(elev)
+
+```
+
+## 3.4 Exercise
+
+```{r}
+library(spData)
+data(us_states)
+data(us_states_df)
+```
+
+
+1. Create a new object called us_states_name that contains only the NAME column from the us_states object. What is the class of the new object and what makes it geographic?
+
+```{r}
+
+us_states_name <- us_states$NAME
+class(us_states_name)
+
+
+```
+the new object _us_stat_name_ is character object, and it is not geographic
+
+2. Select columns from the us_states object which contain population data. Obtain the same result using a different command (bonus: try to find three ways of obtaining the same result). Hint: try to use helper functions, such as contains or starts_with from dplyr (see ?contains).
+
+```{r}
+us_states %>%
+  dplyr::select(starts_with("total_"))
+  
+```
+
+3. Find all states with the following characteristics (bonus find and plot them):
+
+- Belong to the Midwest region.
+- Belong to the West region, have an area below 250,000 km2 and in 2015 a population greater than 5,000,000 residents (hint: you may need to use the function units::set_units() or as.numeric()).
+- Belong to the South region, had an area larger than 150,000 km2 or a total population in 2015 larger than 7,000,000 residents.
+
+```{r}
+mid_west <- us_states %>%
+  filter(REGION == "Midwest")
+
+ggplot() +
+  geom_sf(data = us_states, fill = "NA", color = "grey30") +
+  geom_sf(data = mid_west, fill = "yellow", alpha = 0.8) +
+  theme_map(base_family = "Open Sans") +
+  labs(title = "US midwest") +
+  theme(plot.title = element_text(hjust = 0.5, size = 32, margin = margin(40, 0, 0,0)))
+
+west_region <- us_states %>%
+  mutate(AREA = as.numeric(AREA)) %>%
+  filter(AREA < 250000, REGION == "West", total_pop_15 > 5000000)
+
+ggplot() +
+  geom_sf(data = us_states, fill = "NA", color = "grey30") +
+  geom_sf(data = west_region, fill = "yellow", alpha = 0.8) +
+  theme_map(base_family = "Open Sans") +
+  labs(title = "Washington State",
+       subtitle = "Only state in West, which have population more than \n5 million in 2015 survey and less area than 250,000 Km^2") +
+  theme(plot.title = element_text(hjust = 0.5, size = 32, margin = margin(40, 0, 0,0)),
+        plot.subtitle = element_text(size = 16, face = "italic"))
+
+
+```
+
+
+4. What was the total population in 2015 in the us_states dataset? What was the minimum and maximum total population in 2015?
+
+8. us_states_df has two more rows than us_states. How can you find them? (hint: try to use the dplyr::anti_join() function)
+
+```{r}
+setdiff(us_states_df$state, us_states$NAME)
+
+
+```
+
+Alaska and Hawaii not on the list. PS where is the puerto rico
+
+14. Create a raster from scratch with nine rows and columns and a resolution of 0.5 decimal degrees (WGS84). Fill it with random numbers. Extract the values of the four corner cells.
+
+```{r}
+raster_ran <- raster(nrows = 9, ncols = 9, res = 0.5,
+                     xmn = 0, ymn = 0, xmx = 4.5, ymx = 4.5,
+                     vals = sample(1:81, size = 81, replace = F))
+values(raster_ran)
+res(raster_ran)
+plot(raster_ran)
+
+raster_ran[1,1]
+raster_ran[1,9]
+raster_ran[9,1]
+raster_ran[9,9]
+
+```
+
+
+15. What is the most common class of our example raster grain (hint: modal())?
+
+```{r}
+grain
+
+factorValues(grain, raster::modal(values(grain)))
+
+```
+
+16. Plot the histogram and the boxplot of the data(dem, package = "RQGIS") raster.
+
+```{r}
+data(dem, package = "RQGIS")
+
+hist(dem)
+boxplot(dem)
+
+```
+
+17. Now attach also data(ndvi, package = "RQGIS"). Create a raster stack using dem and ndvi, and make a pairs() plot.
+
+```{r}
+
+data(ndvi, package = "RQGIS")
+
+s <- stack(dem, ndvi)
+
+pairs(s)
+
+par(mfrow = c(1, 2))
+plot(s)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,508 @@
+---
+title: 'Chapter 6: Reprojecting geographic data'
+author: "Yifei Liu"
+date: "10/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# load packages
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(rcartocolor)
+library(raster)
+library(dplyr)
+library(tmap)
+library(rasterVis)
+library(rgdal)
+library(maptools)
+library(fasterize) # fasterize is high-performance replacement for the rasterize
+library(gridExtra)
+library(rcartocolor)
+library(rmapshaper)
+library(spData)
+library(gridExtra)
+library(hrbrthemes)
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+```
+
+
+## 6.1 Introduction
+
+This chapter goes further. It highlight issues that can arise when using inappropriate CRSs and how to transform data from one CRS to another. 
+
+There are two type of CRS
+
+- geographic, ('lat/lon', with units in degrees longitude and latitude)
+- projected (typically with units of meters from a datum)
+
+Many geometry operations in *sf*, for example, assume their inputs have a projectred CRS, beacause the GEOS functions they are based on assume projected data. To deal with issue *sf* provides the function _st_is_longlat()_ to check. In some cases CRS is unknow, as shown below using the example of London
+
+```{r}
+
+london = data.frame(lon = -0.1, lat = 51.5) %>% 
+  st_as_sf(coords = c("lon", "lat"))
+st_is_longlat(london)
+
+```
+
+
+```{r}
+london_geo = st_set_crs(london, 4326)
+st_is_longlat(london_geo)
+
+```
+
+Datasets without a specified CRS can cause problems. 
+
+```{r}
+london_buff_no_crs = st_buffer(london, dist = 1)
+london_buff = st_buffer(london_geo, dist = 1)
+
+```
+
+Only the second operation generate a warning. The warning message is useful, telling us that result may be limited use it is units of latitude and longitude, rather than meters or some other suitable measure of distance assume by st_buffer. 
+
+
+```{r}
+geosphere::distGeo(c(0, 0), c(1, 0))
+geosphere::distGeo(c(-0.1, 51.5), c(0.9, 51.5)) # thie distance of merdians at london latitude is 69439.98 
+# meters compare to 111319.5 at equator
+```
+
+For operation such as buffering, the only way to ensure a good result is to create a projected copy of the data and run the operation on that. 
+
+```{r}
+
+london_proj = data.frame(x = 530000, y = 180000) %>% 
+  st_as_sf(coords = 1:2, crs = 27700)
+
+st_crs(london_proj)
+st_is_longlat(london_proj)
+
+london_proj_buff <- st_buffer(london_proj, 111320)
+```
+
+
+```{r}
+
+ggplot() +
+  geom_sf(data = world %>% filter(str_detect(name_long, "United Kingdom")), fill = NA) +
+  geom_sf(data = london_buff, color = "red", fill = NA) +
+  geom_sf(data = london_proj_buff, color = "black", fill = NA) +
+  labs(title = "Importance of correct CRS")
+
+```
+
+
+## 6.2 When to reprojec?
+
+CRSs are usually set automatically when data is read-in. The main task involving CRSs is often to transform objects, from one CRS into another. But when should data be transfored? And into which CRS? There are no clear-cut answer to these questions and CRS selection always involves trade-offs. 
+
+_when to tranform_: In some cases tranformation to a prkected CRS is essential, such as st_distance, st_nbuffer. Coversely, public data online with leaflet pacakge may requrie a geographic CRS. Another case is when two objects with different CRSs much be comapored or combined. 
+
+```{r}
+
+# st_distance(london_geo, london_proj)
+
+```
+
+To make the london and london_proj objects geographically comparable one of theme much be transformed into the CRS of the other. But which CRS to use? The answer is usually "to the projected CRS"
+
+```{r}
+
+london2 <- st_transform(london_geo, st_crs(london_proj))
+
+st_distance(london2, london_proj)
+
+```
+
+The distance between two representations of london can be 2km apart. 
+
+## 6.3 Which CRS to use?
+
+_whcih CRS is tricky_: there is rearely a 'right' answer, there exist no all-purpose projections, all involve distortion when far from the center of the specified frame
+
+For *geographic CRS*, the answer is often _WGS84_, its EPSG code: 4236. 
+
+For *projected CRS* is required? It is not something that we are free to decide. Often the choice of projection is made by a public mapping agency. Which mean when work with local data source, it is likely preferable to work with the CRS in which the data was provided. 
+
+In cases where an appropriate CRS is not immediately clear, the choice of CRS should depend on the properties taht are most important to preserve in the seusequent maps and analysis. 
+
+
+```{r}
+
+lonlat2UTM <- function(lonlat) {
+  utm = (floor((lonlat[1] + 180) / 6) %% 60) +1
+  if(lonlat[2] >0) {
+    utm + 32600
+  } else
+    utm + 32700
+}
+
+```
+
+This following command uses this function to identify the UTM zone and associated EPSG code for Auckland and London
+
+```{r}
+
+epsg_utm_auk <- lonlat2UTM(c(174.7, -36.9))
+epsg_utm_lnd <- lonlat2UTM(st_coordinates(london))
+
+st_crs(epsg_utm_auk)$proj4string
+st_crs(epsg_utm_lnd)$proj4string
+
+
+
+```
+
+
+Another approach to automatically select a projected CRS specific to a local dataset is to create an azimuthal equidistant projection for the center point of the study area. 
+
+## 6.4 Reprojecting vector geometries
+
+The output of st_crs printed as a single entity, the result is in fact a name list of class crs, with the name proj4string (which contains full details of the CRS) and epsg for its code. 
+
+```{r}
+
+crs_lnd <- st_crs(cycle_hire_osm)
+class(crs_lnd)
+
+crs_lnd$epsg
+
+```
+
+The duality of CRS objects means that they can be set either using an EPSG code or a proj4string. Both elements of CRS are changed by tranforming the object to a projected CRS
+
+```{r}
+cycle_hire_osm_projected <- st_transform(cycle_hire_osm, 27700)
+
+crs_codes <- rgdal::make_EPSG()
+
+crs_codes %>%
+  filter(code == 27700)
+
+```
+
+## 6.5 Modifying map projections
+
+Established CRSs captured by EPSG codes well-suited for many applications. However in some cases it is also desirable to create a new CRS, suing a custome proj4string. 
+
+A long and growing list of projections has been developed and many of these can be set with the +proj= element of proj4string s
+
+when mapping the world while preserving area relationships, the Mollweide projection is a good choice
+
+```{r}
+world_mollweide <- st_transform(world, crs = "+proj=moll")
+
+ggplot() +
+  geom_sf(data = world_mollweide, fill = "white") +
+  theme_minimal()
+
+```
+
+
+On the other hand, when mapping the world, it is foten desibale to have as little distrotion as possible for all spatial properties. On the most popular projections to achieve this is the Winkel tripel projection
+
+Moreever, proj parameters can be modified in most CRS definations. The below code transforms the coordinates to the lambert aziumthal equal-area projection centered on longitude and latitude of 0. And you can change the parameters, like the center of projection from 0, 0 to new york, -74, 40
+
+```{r}
+
+world_laea1 <- st_transform(world,
+                            crs = "+proj=laea +x_0=0 +y_0=0 +lon_0=0 +lat_0=0")
+
+ggplot() +
+  geom_sf(data = world_laea1, fill = "white") +
+  theme_minimal()
+
+world_laea2 <- st_transform(world,
+                            crs = "+proj=laea +x_0=0 +y_0=0 +lon_0=-74 +lat_0=40")
+
+ggplot() +
+  geom_sf(data = world_laea2, fill = "white") +
+  theme_minimal()
+
+```
+
+
+## 6.6 Reprojecting raster geometries
+
+There are important differences in reprojection of vectors thant rasters: Transforming a vector involves changing the the coordiantes of every vertex but this does not apply to raster data. 
+
+Raster reprojection can be thought of two seperate spatial operations:
+
+- a vector reprojection of cell centrodi to another CRS, 
+- and computation of new pixel values through resampling. 
+
+Thus in most cases when both raster and vector data are used, it is better to avoid reprojecting rasters and reprojected vector instead. 
+
+The raster reprojection process is done with projectionRaster from raster pacakge. Like the st_transform fucntion demonstrated in previous section. projRaster take a geographic object (raster dataset in this case) and a crs argument. However, the projectRaster only accept the lenghty proj4string definations of a CRS instead of a EPSG code. 
+
+```{r}
+
+cat_raster = raster(system.file("raster/nlcd2011.tif", package = "spDataLarge"))
+
+crs(cat_raster)
+unique(cat_raster)
+```
+
+When reprojecting categorical raster, the estimated values must be the same as those of the original. This could be done using the nearest enighbor method. 
+
+```{r}
+wgs84 = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+cat_raster_wgs84 = projectRaster(cat_raster, crs = wgs84, method = "ngb")
+
+
+```
+
+Reproject chagne col rows numbers resultions (from meters to degrees) and extent
+
+Reprojecting numeric rasters follows an almost identical procedure. 
+
+```{r}
+
+con_raster = raster(system.file("raster/srtm.tif", package = "spDataLarge"))
+crs(con_raster)
+
+
+```
+
+We will reproject this dataset into a projected CRS, but not with the enarest neighbord but use bilinear method. 
+
+```{r}
+
+equalarea = "+proj=laea +lat_0=37.32 +lon_0=-113.04"
+con_raster_ea = projectRaster(con_raster, crs = equalarea, method = "bilinear")
+crs(con_raster_ea)
+
+```
+
+## Extra: Chapter 6: Coordinate Reference Systems
+
+[Class link](https://rspatial.org/raster/spatial/6-crs.html)
+
+### Notation
+
+```{r}
+
+rgdal::make_EPSG() %>%
+  filter(str_detect(note, "France"))
+
+```
+
+
+```{r}
+f <- system.file("external/lux.shp", package="raster")
+p <- shapefile(f)
+
+crs(p)
+
+
+```
+
+### Transofrming vector data
+
+```{r}
+crs(p)
+
+newcrs <- CRS("+proj=robin +datum=WGS84")
+rob <- spTransform(p, newcrs)
+
+```
+
+
+After the transformation, the units of the geometry are no longer in degrees, but on meters away from (longitude = 0, latitude = 0). The spatial extent of the data is also in these units. 
+
+### Transforming raster data
+
+Vector data can be transformed from lon/lat coordiantes to planar and back without loss of precision. 
+
+
+```{r}
+r <- raster(xmn=-110, xmx=-90, ymn=40, ymx=60, ncols=40, nrows=40)
+r <- setValues(r, 1:ncell(r))
+r
+
+```
+
+
+```{r}
+
+newproj <- "+proj=lcc +lat_1=48 +lat_2=33 +lon_0=-100 +ellps=WGS84"
+pr1 <- projectRaster(r, crs=newproj)
+crs(pr1)
+
+pr2 <- projectRaster(r, crs=newproj, res=20000)
+pr2
+
+```
+
+But to have more control, provide an existing Raster object. That is generally the best way to project raster. By providing an existing Raster object, such that you newly projected data perfectly aligns with it. In this example we do not have an existing Raster object, so we create one using projectExtent
+
+```{r}
+
+pr3 <- projectExtent(r, newproj) # set the cell size
+
+res(pr3) <- 200000
+
+# now project, and note the chagne in the coordinates
+
+pr3 <- projectRaster(r, pr3)
+pr3
+
+plot(pr3)
+```
+
+For raster based analysis it is often important to use equal area projections, particularly when large areas are analyzed. This will assure that the grid cells are all of same size, and therefore comparable to each other. 
+
+## 6.7 Exercises
+
+1. Create a new object called nz_wgs by transforming nz object into the WGS84 CRS.
+
+- Create an object of class crs for both and use this to query their CRSs.
+
+```{r}
+
+st_crs(nz)
+
+nz_wgs <- st_transform(nz, crs = 4326)
+
+nz_crs <- st_crs(nz)
+nz_wgs_crs <- st_crs(nz_wgs)
+
+```
+
+- With reference to the bounding box of each object, what units does each CRS use?
+
+nz_crs use meters, nz_wgs_crs is degree
+
+- Remove the CRS from nz_wgs and plot the result: what is wrong with this map of New Zealand and why?
+
+```{r}
+
+nz_wgs_null <- st_set_crs(nz_wgs, NA)
+
+par(mfrow = c(1, 3))
+plot(st_geometry(nz))
+plot(st_geometry(nz_wgs))
+plot(st_geometry(nz_wgs_null))
+
+```
+
+2. Transform the world dataset to the transverse Mercator projection ("+proj=tmerc") and plot the result. What has changed and why? Try to transform it back into WGS 84 and plot the new object. Why does the new object differ from the original one?
+
+```{r}
+
+world_tmerc <- st_transform(world, crs = "+proj=tmerc")
+world_4236 <- st_transform(world_tmerc, 4236)
+
+par(mfrow = c(1, 2))
+plot(st_geometry(world))
+plot(st_geometry(world_tmerc))
+
+ggplot() + geom_sf(data = world_4236)
+
+```
+
+3. Transform the continuous raster (con_raster) into WGS 84 using the nearest neighbor interpolation method. What has changed? How does it influence the results?
+
+```{r}
+wgs84 = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+con_raster_wgs84 <- projectRaster(con_raster, crs = wgs84, method = "ngb")
+
+data_frame(
+  crs = c("WGS84", "Equal_area"),
+  nrow = c(nrow(con_raster_wgs84), nrow(con_raster)),
+  ncol = c(ncol(con_raster_wgs84), ncol(con_raster)),
+  resolution = c(res(con_raster_wgs84)[1], res(con_raster)[1]),
+  mean = c(cellStats(con_raster_wgs84, mean), cellStats(con_raster, mean))
+)
+
+```
+
+The nrow and ncol have changed, and reduce the resolution and didn't change the mean value and projected units
+
+4. Transform the categorical raster (cat_raster) into WGS 84 using the bilinear interpolation method. What has changed? How does it influence the results?
+
+```{r}
+
+cat_raster_wgs84 <- projectRaster(cat_raster, crs = wgs84, method = "bilinear")
+
+data_frame(
+  crs = c("WGS84", "Equal_area"),
+  nrow = c(nrow(cat_raster_wgs84), nrow(cat_raster)),
+  ncol = c(ncol(cat_raster_wgs84), ncol(cat_raster)),
+  resolution = c(res(cat_raster_wgs84)[1], res(cat_raster)[1]),
+  mean = c(cellStats(cat_raster_wgs84, mean), cellStats(cat_raster, mean))
+)
+
+par(mfrow = c(1, 2))
+plot(cat_raster)
+plot(cat_raster_wgs84)
+
+```
+
+There are several difference between the original and the transformed raster, include nrows and ncols, projected units. And most important different is that bilinear interpolation is a conversion of integer values in the original raster to float values in the output raster. Since this change the nature of data categories, should be avoided. 
+
+
+5. Create your own proj4string. It should have the Lambert Azimuthal Equal Area (laea) projection, the WGS84 ellipsoid, the longitude of projection center of 95 degrees west, the latitude of projection center of 60 degrees north, and its units should be in meters. Next, subset Canada from the world object and transform it into the new projection. Plot and compare a map before and after the transformation.
+
+```{r}
+
+custom_proj <- "+proj=laea +ellps=WGS84 +lon_0=-95 +lat_0=60 +units=m"
+
+canada <- world %>%
+  filter(str_detect(name_long, "Canada"))
+
+canada_custom_crs <- st_transform(canada, crs = custom_proj)
+
+g1 <- ggplot() +
+  geom_sf(data = canada, fill = NA) +
+  coord_sf() +
+  theme_minimal()
+
+g2 <- ggplot() +
+  geom_sf(data = canada_custom_crs, fill = NA) +
+  coord_sf() +
+  theme_minimal()
+
+grid.arrange(g1, g2, ncol = 2)
+
+
+```
+
+
+
+
+https://geocompr.github.io/geocompkg/articles/solutions05.html
+http://philipphunziker.com/velox/extract.html
+https://github.com/hunzikp/pgrid
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
