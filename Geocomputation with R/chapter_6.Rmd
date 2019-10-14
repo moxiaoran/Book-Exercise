@@ -27,6 +27,8 @@ library(rcartocolor)
 library(rmapshaper)
 library(spData)
 library(gridExtra)
+library(showtext)
+font_add_google("Lato", regular.wt = 300, bold.wt = 700)
 library(hrbrthemes)
 detach("package:dplyr", unload = TRUE)
 library(dplyr)
@@ -465,12 +467,22 @@ canada_custom_crs <- st_transform(canada, crs = custom_proj)
 g1 <- ggplot() +
   geom_sf(data = canada, fill = NA) +
   coord_sf() +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "geographic CRSs",
+       subtitle = "WGS84") +
+  theme(text = element_text(family = "Lato"),
+        plot.title = element_text(face = "bold", size = 24, hjust = 0.5),
+        plot.subtitle = element_text(face = "italic", size = 16))
 
 g2 <- ggplot() +
   geom_sf(data = canada_custom_crs, fill = NA) +
   coord_sf() +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "projected CRS",
+       subtitle = "Lambert Azimuthal Equal Area") +
+  theme(text = element_text(family = "Lato"),
+        plot.title = element_text(face = "bold", size = 24, hjust = 0.5),
+        plot.subtitle = element_text(face = "italic", size = 16))
 
 grid.arrange(g1, g2, ncol = 2)
 
