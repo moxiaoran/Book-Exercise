@@ -6,4 +6,4 @@ text mining, data cleaning by doing the homework and typing the code in all thos
 
 ## Canada map on different projection
 
-- ![1](https://github.com/moxiaoran/Book-Exercise/blob/master/Example/Canada.png)
+![](https://github.com/moxiaoran/Book-Exercise/blob/master/Example/Canada.png)
