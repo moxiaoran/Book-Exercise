@@ -14,6 +14,11 @@ library(sf)
 library(raster)
 library(dplyr)
 library(spData)
+library(copernicus) # https://github.com/antoinestevens/copernicus
+library(getlandsat)
+library(knitr)
+
+theme_set(theme_minimal())
 ```
 
 ## 7.1 Introduction
@@ -24,7 +29,50 @@ This chapter is about read and write geographic data. Geo data import is essenti
 
 A vast and ever-increasing amount of geographic data is avaiable on the internet. In some way there is now too much data, in the sense that there are often multiple palces to access the same dataset. And some place data quality is poor. So it is vital to know where to look at. Various "geoportals" (web services providing geospatial datasets such as Data.gov) are a good place to start, providing a wide range of data but often for specific locations
 
+```{r}
+# example
+# unzip(zipfile = "/Users/yifeiliu/Documents/R/data/book_exercise/geocom/Dams.zip", exdir = "/Users/yifeiliu/Documents/R/data/book_exercise/geocom/Dams")
+
+us_dams <- st_read("/Users/yifeiliu/Documents/R/data/book_exercise/geocom/Dams/Dams.shp")
+
+us_dams
+
+```
+
+```{r}
+df <- gen_tile_copernicus()
+head(df)
+# Return a Spatial object
+library(sp)
+pol <- gen_tile_copernicus(poly = TRUE)
+
+plot(pol)
+```
+
+
+
 ### 7.3 Geographic data packages
+
+A multitude of R package hav ebeen developed for accessing geographic data, some of which are presented in the datatable. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

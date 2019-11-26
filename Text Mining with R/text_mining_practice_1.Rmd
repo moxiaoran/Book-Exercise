@@ -32,7 +32,7 @@ library(widyr)
 library(wordcloud)
 library(widyr)
 library(igraph)
-library(subtools)
+library(subtools) # devtools::install_github("fkeck/subtools")
 library(topicmodels)
 library(mallet)
 theme_set(theme_minimal())
@@ -199,7 +199,6 @@ cor.test(data = tidy_freq[tidy_freq$author == "Steven Bird",], ~ proportion + `D
 ```
 
 just as we plot, the word freqencies are more correlated between Finance book then between finanance and programming book. 
-
 
 
 

@@ -13,13 +13,19 @@ knitr::opts_chunk$set(echo = TRUE)
 library(sandwich)
 library(tidyverse)
 library(ggplot2)
-
+library(HSAUR)
+theme_set(theme_minimal())
 detach("package:dplyr", unload=TRUE)
 library(dplyr)
 
 ```
 
 ## 2.2 Statistical Tests
+
+Inference, the process of drawing conclusion about a population on the basis of measurements or observations made on a sample of individuals from the population, is central to statistics. 
+
+### _2.2.1 Comparing Normal population: Student's t-Test_
+
 
 ```{r}
 

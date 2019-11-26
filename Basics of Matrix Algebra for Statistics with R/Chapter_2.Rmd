@@ -1,0 +1,349 @@
+---
+title: "Chapter 2"
+author: "Yifei Liu"
+date: "2/1/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 2.1 Vectors
+
+Example 2.1
+
+```{r}
+x <- matrix(c(1:3), nrow = 3)
+y <- matrix(c(4:6), nrow = 3)
+
+t(x) %*% y
+
+```
+
+## 2.2 Matrices
+
+
+## 2.3 Matrix Arithmetic
+
+```{r}
+a <- matrix(1:4, ncol = 2, byrow = T)
+b <- matrix(5:8, ncol = 2, byrow = T)
+
+a %*% b
+
+b %*% a
+
+a <- matrix(c(1,1,2,2,1,3,3,1,4,4,1,5), byrow = T, ncol = 3)
+b <- matrix(rep(0, 4), ncol = 1)
+solve(a, b)
+```
+
+## 2.4 Transpose and trace of sums and products
+
+If A + B is defined (i.e. A and B have the same orders) then $(A + B)' = A' + B'$ and $tr(A + B) = tr(A) + tr(B)$. If A is $m\times n$ and B is $n \times p$ then AB is $m\times n \times n\times p = m \times p$
+so $(AB)'$ is $p\times m$. $(AB)'=B'A'$
+
+
+
+## 2.5 Special Matrics
+
+### 2.5.1 Symmetrics and skew-symmetric matrices
+
+A square $n \times n$ matrix $A = (a_{ij})$ is *symmetric* if $\acute{A} = A$, i.e., $a_{ij} = a_{ij}$ for all i,j. 
+
+A square matrix $B = (b_{ij})$ is *Skew-symmetric* if $\acute{B} = -B$ i.e. $b_{ij} = - b{ji}$ for all i, j. 
+
+
+### 2.5.2 Product with transpose AA'
+
+### 2.5.3 Orthogonal matrices
+
+### 2.5.4 nromal matrices
+
+A $p\times p$ matrix is normal if $AA' = A'A$, i.e., if A commutes with A'. Clearly all symmetric, all skew-symmetric and all orthogonal matrices are normal
+
+### 2.5.5 Permutation matrices
+
+
+```{r}
+# Example 2.5
+A <- matrix(1:9, 3,3, byrow = T)
+E <- matrix(c(1,0,0,0,1,0), 2,3, byrow = T)
+F <- matrix(c(1,0,0,1,0,0), 3,2, byrow = T)
+
+E %*% A
+A %*% F
+E %*% A %*% F
+
+```
+
+## 2.6 Partitioned Matrices
+
+### 2.6,1 Sub-matrtices
+
+```{r}
+# A is 
+A <- matrix(c(1:9), 3, 3, byrow = T)
+A
+# first two row
+E <- matrix(c(1, 0, 0, 0, 1,0), 2, 3, byrow = T)
+E
+# If you want first two rows of matrix A use this matrix to multiple A
+diag(1, dim(A))[-3, ] %*% A
+# last two rows
+F <- t(E)
+A %*% F
+E %*% A %*% F 
+A[1:2, 1:2]
+
+```
+
+### 2.6.2 Manipulation of partitioned matrices
+
+### 2.6.3 Implementation of partitioned matrices in R
+
+```{r}
+A <- matrix(1:6, 2,3)
+B <- matrix(1:6, 2,3, byrow = T)
+
+U <- cbind(A, B)
+U[1:2, 3:6]
+
+```
+
+## 2.7 Algebraic Manipualtion of Matrices
+
+### 2.7.1 General expansion of products
+
+
+
+
+## 2.8 Useful Tricks
+
+### 2.8.1 Tracking dimensions annd 1* 1 matrices
+
+### 2.8.2 Trace of products
+
+## 2.9 Linear and quadratic forms
+
+## 2.10 Creating Matrices in R
+
+### 2.10.1 Ambiguidty of vectors
+
+## 2.11 matrix Arithmetic in R
+
+2.11.1
+
+```{r}
+
+A <- matrix(c(1:6), 2, 3, byrow = F)
+B <- matrix(c(1:6), 2, 3, byrow = T)
+C <- matrix(c(1:6), 2, 3)
+D <- matrix(c(1:6), 2, 3, byrow = T)
+E <- matrix(c(1:6), 3, 2, byrow = T)
+
+A + C
+A - D
+
+```
+
+2.11.2 Multiplication
+
+2.11.2.1 Stand multiplicaiton
+
+```{r}
+
+A <- matrix(c(1:6), 2, 3, byrow = T)
+B <- matrix(c(1:6), 3, 2, byrow = T)
+
+A
+A %*% B
+B
+B %*% A
+```
+
+2.11.2.2 Element-by-element (hadamard) multiplication
+
+```{r}
+
+t(B)
+A * t(B)
+
+```
+
+2.11.2.3 Non-commuting matrices
+
+```{r}
+
+U <- matrix(c(1:4), 2, 2, byrow = T)
+V <- matrix(c(5:8), 2, 2, byrow = T)
+
+U
+
+U %*% V
+V %*% V
+```
+
+2.11.2.4 Commuting matrices
+
+```{r}
+
+W <- matrix(c(2, 2, 3, 5), 2, 2, byrow = T)
+
+W
+U %*% W
+W %*% U
+
+```
+
+2.11.2.5 Transpose of products
+
+```{r}
+
+t(U %*% V)
+t(V) %*% t(U)
+t(U) %*% t(V)
+
+```
+
+so $(UV)' = V'U' \neq U'V'$
+
+```{r}
+
+t(U %*% W)
+t(W) %*% t(U)
+t(U) %*% t(W)
+
+```
+
+Note that U and W commute so it follows that U' and W' also commute
+
+
+```{r}
+
+U %*% t(W)
+t(W) %*% U
+
+```
+
+But it does not follow the that because U and W commute when W' also commutes with U as the above example demonstrates
+
+2.11.2.6 Corss-products
+
+```{r}
+
+A
+crossprod(A)
+t(A) %*% A
+
+tcrossprod(A)
+A %*% t(A)
+
+```
+
+2.11.2.7 Ambiguity of vectors
+
+```{r}
+
+X <- matrix(c(1:9), 3, 3, byrow = T)
+X
+
+a <- c(1:3)
+b <- c(4:6)
+a %*% X
+X %*% a
+b %*% X
+a %*% b
+b %*% a
+
+
+
+```
+
+Here the inner product of a and b is returned, whatever the order of the product. 
+
+2.11.3 Diagonal matrices
+
+2.11.3.1 Creating a diagonal matrix from a list
+
+2.11.3.2 Extracting the diagonal
+
+```{r}
+
+E %*% A
+diag(E %*% A)
+
+```
+
+2.11.3.3 Converting a matrix to diagonal
+
+```{r}
+
+diag(diag(E %*% A))
+
+```
+
+2.11.4 Trace
+
+2.11.4.1 Trace of square matrix
+
+```{r}
+
+sum(diag(E %*% A))
+sum(diag(U))
+sum(diag(V))
+
+```
+
+2.11.4.2 Trace of transpose of products
+
+```{r}
+
+sum(diag(U))
+sum(diag(t(U)))
+
+U %*% V; V %*% U
+
+# but
+
+sum(diag(U%*%V)); sum(diag(U %*% V))
+
+```
+
+2.11.4.3 Create a fucntion for trace of a matrix
+
+
+
+```{r}
+
+tr <- function(x) {
+  tr <- sum(diag(x))
+  return(tr)
+}
+
+tr(U)
+
+```
+
+## 2.12 Initial statistical Application
+
+### 2.12.2 Lienar models
+
+### 2.12.3 Multivariate analysis
+
+### 2.12.3.2 Sample statisic in R
+
+```{r}
+
+X <- t(as.matrix(A))
+
+```
+
+
+
+
+
+
+
+

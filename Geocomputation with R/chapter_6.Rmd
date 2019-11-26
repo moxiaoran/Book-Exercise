@@ -397,6 +397,8 @@ plot(st_geometry(nz_wgs_null))
 
 ```
 
+it is fatter in the east-west direction. Because new zealand is clos to the south pole and merdians converge there.
+
 2. Transform the world dataset to the transverse Mercator projection ("+proj=tmerc") and plot the result. What has changed and why? Try to transform it back into WGS 84 and plot the new object. Why does the new object differ from the original one?
 
 ```{r}
@@ -408,22 +410,31 @@ par(mfrow = c(1, 2))
 plot(st_geometry(world))
 plot(st_geometry(world_tmerc))
 
-ggplot() + geom_sf(data = world_4236)
+ggplot(world_tmerc) + geom_sf() + coord_sf()
 
 ```
 
 3. Transform the continuous raster (con_raster) into WGS 84 using the nearest neighbor interpolation method. What has changed? How does it influence the results?
 
 ```{r}
-wgs84 = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
-con_raster_wgs84 <- projectRaster(con_raster, crs = wgs84, method = "ngb")
+utm12n = "+proj=utm +zone=12 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+con_raster = raster(system.file("raster/srtm.tif", package = "spDataLarge"))
+con_raster_utm12n <- projectRaster(con_raster, crs = utm12n, method = "ngb")
 
-data_frame(
-  crs = c("WGS84", "Equal_area"),
-  nrow = c(nrow(con_raster_wgs84), nrow(con_raster)),
-  ncol = c(ncol(con_raster_wgs84), ncol(con_raster)),
-  resolution = c(res(con_raster_wgs84)[1], res(con_raster)[1]),
-  mean = c(cellStats(con_raster_wgs84, mean), cellStats(con_raster, mean))
+con_raster_utm12n
+
+plot(mfrow = c(1, 2))
+plot(con_raster)
+plot(con_raster_utm12n)
+
+
+data.frame(
+  CRS = c("WGS84", "UTM12n"),
+  nrow = c(nrow(con_raster), nrow(con_raster_utm12n)),
+  ncol = c(ncol(con_raster), ncol(con_raster_utm12n)),
+  ncell = c(ncell(con_raster), ncell(con_raster_utm12n)),
+  resolution = c(res(con_raster)[1], res(con_raster_utm12n)[1]),
+  mean = c(mean(values(con_raster)), mean(values(con_raster_utm12n), na.rm = T))
 )
 
 ```
@@ -434,8 +445,11 @@ The nrow and ncol have changed, and reduce the resolution and didn't change the 
 
 ```{r}
 
-cat_raster_wgs84 <- projectRaster(cat_raster, crs = wgs84, method = "bilinear")
+wgs84 = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+cat_raster = raster(system.file("raster/nlcd2011.tif", package = "spDataLarge"))
+cat_raster_wgs84 = projectRaster(cat_raster, crs = wgs84, method = "bilinear")
 
+cat_raster_wgs84
 data_frame(
   crs = c("WGS84", "Equal_area"),
   nrow = c(nrow(cat_raster_wgs84), nrow(cat_raster)),

@@ -1,0 +1,235 @@
+---
+title: 'Chapter 1: Introduction'
+author: "Yifei Liu"
+date: "10/31/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(MASS)
+
+```
+
+
+
+## 1.7 Examples of R commands
+
+1.7.2 Inputting data
+
+```{r}
+
+A <- matrix(c(1:6), nrow = 2, ncol = 3, byrow = F)
+B <- matrix(c(1:6), nrow = 2, ncol = 3, byrow = T)
+A
+A[1, ]
+
+B
+B[1, ]
+```
+
+```{r}
+
+C <- matrix(c(1:6), 2, 3)
+D <- matrix(c(1:6), 2, 3, byrow = T)
+
+C
+D
+```
+
+
+1.7.3 Calculations
+
+```{r}
+
+A + B
+A - B
+2 * A
+# A %*% B
+
+# transpose A is A'
+t(A)
+t(A) %*% B
+
+
+```
+
+*Beware: A \* B* gives element-by-element multiplication
+
+```{r}
+
+A * B
+
+# Kronecker products
+kronecker(A, B)
+
+kronecker(B, A)
+
+```
+
+[The Kronecker Product of two matrices](https://www.youtube.com/watch?v=e1UJXvu8VZk)
+
+1.7.4 Dimensions and lengths of matrices of vectros
+
+```{r}
+
+C <- matrix(c(1:6), 2, 3)
+dim(C)
+dim(t(C))
+length(C)
+x <- c(1:4)
+length(x)
+dim(x)
+```
+
+*Beware:*
+
+```{r}
+print(c(class(x), class(t(x))))
+dim(x)
+dim(t(x))
+
+```
+
+```{r}
+x <- c(1, 2)
+Z <- matrix(c(1:4), 2, 2)
+
+x
+Z
+Z %*% x
+x %*% Z
+
+```
+if *x* is foced to be a matrix, one of these multiplciations will give an error because of non-conformability
+
+```{r}
+
+class(x)
+x <- matrix(x)
+class(x)
+
+Z %*% x
+# x %*% Z
+```
+
+1.7.5 Joining matrices together
+
+```{r}
+
+A
+C
+
+cbind(A, C)
+rbind(A, C)
+t(rbind(t(A), t(B))) 
+cbind(A, B)
+t(cbind(t(A), t(B)))
+
+
+
+```
+
+17.6 Diagonals and trace
+
+```{r}
+E <- matrix(c(1:9), 3, 3, byrow = T)
+E
+diag(E)
+diag(c(1, 5, 9))
+sum(diag(E))
+diag(diag(E))
+```
+
+1.7.7 Trace of products
+
+```{r}
+F <- matrix(c(1:9), 3, 3)
+F
+E %*% F
+F %*% E
+
+
+```
+
+1.7.8 Transpose of products
+
+```{r}
+
+t(E %*% F)
+
+```
+
+1.7.9 Determinants
+
+```{r}
+
+G <- matrix(c(1, -2, 2, 2, 0, 1, 1, 1, -2), 3, 3, byrow = T)
+G
+det(G)
+
+```
+
+1.7.10 Diagonal matrices
+
+```{r}
+
+G
+diag(diag(G))
+
+
+```
+
+
+1.7.11 Inverses
+
+```{r}
+
+solve(A %*% t(B))
+
+# solve inverse by hand
+A %*% t(B) 
+(1 / det(A %*% t(B))) * matrix(c(64, -49, -28, 22), 2, 2, byrow = T)
+
+# use MASS
+ginv(A %*% t(B))
+
+#solve(t(A) %*% B) computation singular
+
+ginv(t(A) %*% B)
+
+```
+
+1.7.12 Eigenanalyses
+
+
+
+```{r}
+
+eigen(A %*% t(B))
+
+```
+
+[Eigen vector and values](https://www.youtube.com/watch?v=G4N8vJpf7hM)
+
+1.7.13 Singular value decomposition
+
+```{r}
+
+X <- matrix(c(1:9), 3, 3, byrow = T)
+X
+svd(X)
+```
+
+
+
+
+
+
+
+
+
+

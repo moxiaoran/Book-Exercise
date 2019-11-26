@@ -16,6 +16,7 @@ library(pdftools)
 library(stringr)
 library(tidyr)
 library(gutenbergr)
+library(forcats)
 library(pdftools)
 library(tm)
 library(tm.plugin.webmining)
@@ -29,6 +30,7 @@ library(ggraph)
 library(widyr)
 library(wordcloud)
 library(widyr)
+library(textdata)
 library(igraph)
 library(subtools)
 library(topicmodels)
@@ -84,7 +86,7 @@ austen_books() %>%
   count(word1, word2, word3, sort = T)
 ```
 
-## Analyzing Bigrams
+### 4.1.2 Analyzing Bigrams
 
 ```{r}
 bigrams_filtered %>%
@@ -109,7 +111,7 @@ bigram_tf_idf %>%
   facet_wrap(~book, scales = "free", ncol = 2) +
   labs(x = NULL, y = NULL)
 ```
-## Using Bigrams to provide context in sentiment analysis
+### 4.1.3 Using Bigrams to provide context in sentiment analysis
 
 ```{r}
 bigrams_separated %>%
@@ -125,17 +127,17 @@ AFINN
 not_words <- bigrams_separated %>%
   filter(word1 == "not") %>%
   inner_join(AFINN, by = c(word2 = "word")) %>%
-  count(word2, score, sort = T) %>%
+  count(word2, value, sort = T) %>%
   ungroup()
 
 not_words
 
 not_words %>%
-  mutate(contribution = n * score) %>%
+  mutate(contribution = n * value) %>%
   arrange(desc(abs(contribution))) %>%
   head(20) %>%
   mutate(word2 = fct_reorder(word2, contribution)) %>%
-  ggplot(aes(word2, n * score, fill = n * score > 0)) +
+  ggplot(aes(word2, n * value, fill = n * value > 0)) +
   geom_col(show.legend = F) +
   labs(x = "Word preceded by \"not\"",
        y = "Sentiment Score * number of occurances") +
@@ -143,7 +145,7 @@ not_words %>%
 
 ```
 
-## Visualizing a Network of bigrams with ggraph
+### 4.1.4 Visualizing a Network of bigrams with ggraph
 
 ```{r}
 bigram_count
@@ -155,6 +157,9 @@ bigram_graph <- bigram_count %>%
 bigram_graph
 ```
 we can use ggraph package to plot this igraph
+
+
+
 
 ```{r}
 set.seed(2017)
@@ -172,7 +177,6 @@ ggraph(bigram_graph, layout = "fr") +
   geom_node_point(color = "lightblue", size = 5) +
   geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
   theme_void()
-
 
 ```
 
@@ -269,5 +273,31 @@ word_cors %>%
 
 
 ```
+
+
+
+```{r}
+bigram_graph
+E(bigram_graph)
+V(bigram_graph)
+degree(bigram_graph, mode = c("all"))
+betweenness(bigram_graph, directed = T,
+            normalized = T)
+
+eigen_centrality(bigram_graph)$vector
+# edge_density is a measure of how interconnective a network is 
+edge_density(bigram_graph)
+# Average path length, another measure of interrconnective a network is
+mean_distance(bigram_graph, directed = F)
+
+erdos.renyi.game(n = gorder(bigram_graph), p.or.m = edge_density(bigram_graph), type = "gnp")
+
+```
+
+
+
+
+
+
 
 
